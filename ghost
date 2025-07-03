@@ -3,10 +3,91 @@ local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+-- Camuflagem total
+local function ghostName()
+    return "_" .. tostring(math.random(100000, 999999))
+end
+
+local function getCharacterRoot(char)
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso") or char:FindFirstChild("UpperTorso")
+end
+
+local function getReachPart(mode)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("Humanoid") then return nil end
+
+    local partPriority = {
+        Arms = {"RightHand", "RightArm"},
+        Legs = {"RightFoot", "RightLeg"},
+        Fallback = {"HumanoidRootPart", "Torso", "UpperTorso"}
+    }
+
+    local candidates = partPriority[mode] or {}
+    for _, name in ipairs(candidates) do
+        local part = char:FindFirstChild(name)
+        if part and part:IsA("BasePart") then
+            return part
+        end
+    end
+
+    for _, name in ipairs(partPriority.Fallback) do
+        local part = char:FindFirstChild(name)
+        if part and part:IsA("BasePart") then
+            return part
+        end
+    end
+
+    for _, v in ipairs(char:GetChildren()) do
+        if v:IsA("BasePart") then
+            return v
+        end
+    end
+    return nil
+end
+
+-- Buscar evento de futebol dinamicamente
+local function findReachEvent()
+    local keywords = {"kick", "pass", "ball", "steal", "tackle", "touch", "goal"}
+    for _, v in pairs(ReplicatedStorage:GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+            for _, key in pairs(keywords) do
+                if v.Name:lower():find(key) then
+                    return v
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local activeReachThread = nil
+local function startReachLoop(event, getOrigin, distance)
+    if activeReachThread then coroutine.close(activeReachThread) end
+    activeReachThread = coroutine.create(function()
+        while true do
+            task.wait(1 + math.random())
+            local root = getOrigin()
+            if not root then continue end
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character then
+                    local trg = getCharacterRoot(plr.Character)
+                    if trg and (root.Position - trg.Position).Magnitude <= distance then
+                        pcall(function()
+                            event:FireServer(plr)
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+    coroutine.resume(activeReachThread)
+end
 
 -- Criar GUI
 local gui = Instance.new("ScreenGui")
-gui.Name = "RGX_UI" .. math.random(1000, 9999)
+gui.Name = ghostName()
 gui.ResetOnSpawn = false
 gui.Parent = CoreGui
 
@@ -109,8 +190,21 @@ end
 
 -- Reach
 local ReachDist_Arms, ReachDist_Legs = 15, 15
-createSlider(pages["Reach"], "Reach Arms", 0, 100, 15, function(v) ReachDist_Arms = v end)
-createSlider(pages["Reach"], "Reach Legs", 0, 100, 15, function(v) ReachDist_Legs = v end)
+createSlider(pages["Reach"], "Reach Arms", 0, 100, 15, function(v)
+    ReachDist_Arms = v
+    local ev = findReachEvent()
+    if ev then
+        startReachLoop(ev, function() return getReachPart("Arms") end, ReachDist_Arms)
+    end
+end)
+
+createSlider(pages["Reach"], "Reach Legs", 0, 100, 15, function(v)
+    ReachDist_Legs = v
+    local ev = findReachEvent()
+    if ev then
+        startReachLoop(ev, function() return getReachPart("Legs") end, ReachDist_Legs)
+    end
+end)
 
 -- Fake
 local function createButton(parent, label, callback)
@@ -128,11 +222,31 @@ local function createButton(parent, label, callback)
 end
 
 createButton(pages["Fake"], "Fake Arms", function()
-    -- Criar bracos falsos (universais)
+    local root = getCharacterRoot(LocalPlayer.Character)
+    for i = 1, 2 do
+        local part = Instance.new("Part")
+        part.Size = Vector3.new(1, 3, 1)
+        part.Position = root.Position + Vector3.new(i * 2, 0, 0)
+        part.Anchored = true
+        part.Transparency = 1
+        part.Name = ghostName()
+        part.CanCollide = false
+        part.Parent = nil
+    end
 end)
 
 createButton(pages["Fake"], "Fake Legs", function()
-    -- Criar pernas falsas (universais)
+    local root = getCharacterRoot(LocalPlayer.Character)
+    for i = -1, 1, 2 do
+        local part = Instance.new("Part")
+        part.Size = Vector3.new(1, 3, 1)
+        part.Position = root.Position + Vector3.new(i * 1, -3, 0)
+        part.Anchored = true
+        part.Transparency = 1
+        part.Name = ghostName()
+        part.CanCollide = false
+        part.Parent = nil
+    end
 end)
 
 -- Kill
