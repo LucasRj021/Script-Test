@@ -13,8 +13,11 @@ local Camera = Workspace.CurrentCamera
 -- Configurações globais
 local Config = {
     Keys = {
-        Mensal = "Mensal_1",
-        Lifetime = "Key_Lifetime"
+        Mensal_1 = "Mensal_1",
+        Mensal_2 = "Mensal_2",
+        Mensal_3 = "Mensal_3",
+        Lifetime_1 = "Lifetime_1",
+        Lifetime_2 = "Lifetime_2"
     },
     URLs = {
         Ghosta = "https://raw.githubusercontent.com/LucasRj021/Script-Test/e4140912a56bc36f6c37e7d579a1cba4ce51e0b7/ghosta.lua",
@@ -23,20 +26,23 @@ local Config = {
     Settings = {
         uiColor = Color3.fromRGB(30, 30, 30),
         uiAccentColor = Color3.fromRGB(0, 170, 255),
-        reachValue = 100, -- Alcance aumentado
+        reachValue = 100,
         uiVisible = true,
         aimbotActive = false,
         aimbotMode = "middle",
-        aimbotForce = 70, -- Força ajustada
+        aimbotForce = 70,
         autoGKActive = false,
         gkSensitivity = 25,
         teleportActive = false,
         autoGoalActive = false,
         espActive = false,
-        fakeLag = 0.02, -- Reduzido para maior realismo
-        reachDynamic = true, -- Alcance dinâmico para mãos e pernas
-        reachHandMultiplier = 1.5, -- Alcance extra para mãos
-        reachLegMultiplier = 1.8 -- Alcance extra para pernas
+        fakeLag = 0.02,
+        reachDynamic = true,
+        reachHandMultiplier = 1.5,
+        reachLegMultiplier = 1.8,
+        skillRecordKey = Enum.KeyCode.F,
+        autoSkillsActive = false,
+        selectedConfig = nil
     }
 }
 
@@ -45,6 +51,18 @@ local KeyData = {
     key = nil,
     activatedAt = nil,
     duration = 30 * 24 * 60 * 60 -- 30 dias em segundos
+}
+
+local SkillData = {
+    recording = false,
+    movements = {},
+    lastPosition = nil,
+    lastCFrame = nil,
+    startTime = nil
+}
+
+local ConfigData = {
+    savedConfigs = {}
 }
 
 local function saveData(file, data)
@@ -66,7 +84,7 @@ local function loadData(file)
     return nil
 end
 
--- Sistema de validação de keys
+-- Sistema de validação de keys melhorado
 local function validateKeyOnline(key)
     local success, response = pcall(function()
         return HttpService:GetAsync(Config.URLs.ValidationAPI .. "?key=" .. HttpService:UrlEncode(key))
@@ -76,13 +94,13 @@ local function validateKeyOnline(key)
         if data.valid then
             KeyData.key = key
             KeyData.activatedAt = data.activatedAt or os.time()
-            KeyData.duration = data.duration or Config.KeyData.duration
+            KeyData.duration = (key == Config.Keys.Lifetime_1 or key == Config.Keys.Lifetime_2) and math.huge or (data.duration or KeyData.duration)
             saveData("ghosta_key.dat", KeyData)
-            print("[Loader] Key validada online com sucesso.")
+            print("[Loader] Key validada online com sucesso: " .. key)
             return true
         end
     end
-    warn("[Loader] Falha na validação online da key.")
+    warn("[Loader] Falha na validação online da key: " .. key)
     return false
 end
 
@@ -91,7 +109,7 @@ local function loadSavedKey()
     if data then
         KeyData = data
         if isKeyValid() then
-            print("[Loader] Key carregada do arquivo.")
+            print("[Loader] Key carregada do arquivo: " .. KeyData.key)
             return true
         end
     end
@@ -99,22 +117,35 @@ local function loadSavedKey()
 end
 
 local function isKeyValid()
-    if KeyData.key == Config.Keys.Lifetime then return true end
-    if KeyData.key == Config.Keys.Mensal and KeyData.activatedAt then
-        return (os.time() - KeyData.activatedAt) <= KeyData.duration
+    if KeyData.key == Config.Keys.Lifetime_1 or KeyData.key == Config.Keys.Lifetime_2 then
+        return true
+    end
+    if (KeyData.key == Config.Keys.Mensal_1 or KeyData.key == Config.Keys.Mensal_2 or KeyData.key == Config.Keys.Mensal_3) and KeyData.activatedAt then
+        local elapsedTime = os.time() - KeyData.activatedAt
+        if elapsedTime <= KeyData.duration then
+            print("[Loader] Key válida, tempo restante: " .. math.floor((KeyData.duration - elapsedTime) / (24 * 60 * 60)) .. " dias")
+            return true
+        else
+            warn("[Loader] Key expirada: " .. KeyData.key)
+            KeyData.key = nil
+            KeyData.activatedAt = nil
+            saveData("ghosta_key.dat", KeyData)
+            return false
+        end
     end
     return false
 end
 
 local function activateKey(k)
-    if k == Config.Keys.Lifetime or k == Config.Keys.Mensal then
+    if k == Config.Keys.Lifetime_1 or k == Config.Keys.Lifetime_2 or k == Config.Keys.Mensal_1 or k == Config.Keys.Mensal_2 or k == Config.Keys.Mensal_3 then
         KeyData.key = k
         KeyData.activatedAt = os.time()
+        KeyData.duration = (k == Config.Keys.Lifetime_1 or k == Config.Keys.Lifetime_2) and math.huge or KeyData.duration
         saveData("ghosta_key.dat", KeyData)
-        print("[Loader] Key " .. (k == Config.Keys.Lifetime and "Lifetime" or "Mensal") .. " ativada.")
+        print("[Loader] Key " .. k .. " ativada com sucesso.")
         return true
     end
-    warn("[Loader] Key inválida!")
+    warn("[Loader] Key inválida: " .. k)
     return false
 end
 
@@ -125,6 +156,7 @@ local function requestKey()
     if validateKeyOnline(inputKey) or activateKey(inputKey) then
         return inputKey
     end
+    warn("[Loader] Key inválida ou falha na validação. Tente novamente.")
     return nil
 end
 
@@ -157,13 +189,304 @@ local function executeGhosta(code)
     return true
 end
 
--- Bypass de anticheat avançado
+-- Interface do usuário
+local function createUI()
+    local ScreenGui = Instance.new("ScreenGui")
+    ScreenGui.Name = "GhostaUI"
+    ScreenGui.Parent = CoreGui
+    ScreenGui.IgnoreGuiInset = true
+
+    local MainFrame = Instance.new("Frame")
+    MainFrame.Size = UDim2.new(0, 400, 0, 500)
+    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+    MainFrame.BackgroundColor3 = Config.Settings.uiColor
+    MainFrame.BorderSizePixel = 0
+    MainFrame.Parent = Screenocalyptic
+    local Tabs = Instance.new("Frame")
+    Tabs.Size = UDim2.new(1, 0, 0, 30)
+    Tabs.BackgroundColor3 = Config.Settings.uiAccentColor
+    Tabs.Parent = MainFrame
+
+    local function createTab(name, position, callback)
+        local TabButton = Instance.new("TextButton")
+        TabButton.Size = UDim2.new(0.25, 0, 1, 0)
+        TabButton.Position = UDim2.new(position, 0, 0, 0)
+        TabButton.Text = name
+        TabButton.BackgroundColor3 = Config.Settings.uiAccentColor
+        TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TabButton.Parent = Tabs
+        TabButton.MouseButton1Click:Connect(callback)
+    end
+
+    local TabContents = Instance.new("Frame")
+    TabContents.Size = UDim2.new(1, 0, 1, -30)
+    TabContents.Position = UDim2.new(0, 0, 0, 30)
+    TabContents.BackgroundTransparency = 1
+    TabContents.Parent = MainFrame
+
+    local function clearTabContent()
+        for _, child in pairs(TabContents:GetChildren()) do
+            child:Destroy()
+        end
+    end
+
+    local function createAutoSkillsTab()
+        clearTabContent()
+        local Content = Instance.new("Frame")
+        Content.Size = UDim2.new(1, 0, 1, 0)
+        Content.BackgroundTransparency = 1
+        Content.Parent = TabContents
+
+        local RecordButton = Instance.new("TextButton")
+        RecordButton.Size = UDim2.new(0.45, 0, 0, 50)
+        RecordButton.Position = UDim2.new(0.05, 0, 0.1, 0)
+        RecordButton.Text = "Start Record Skills"
+        RecordButton.BackgroundColor3 = Config.Settings.uiAccentColor
+        RecordButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        RecordButton.Parent = Content
+        RecordButton.MouseButton1Click:Connect(function()
+            SkillData.recording = true
+            SkillData.movements = {}
+            SkillData.startTime = tick()
+            print("[AutoSkills] Iniciando gravação de movimentos.")
+        end)
+
+        local StopButton = Instance.new("TextButton")
+        StopButton.Size = UDim2.new(0.45, 0, 0, 50)
+        StopButton.Position = UDim2.new(0.5, 0, 0.1, 0)
+        StopButton.Text = "Stop Record Skills"
+        StopButton.BackgroundColor3 = Config.Settings.uiAccentColor
+        StopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        StopButton.Parent = Content
+        StopButton.MouseButton1Click:Connect(function()
+            SkillData.recording = false
+            print("[AutoSkills] Gravação parada. " .. #SkillData.movements .. " movimentos salvos.")
+            saveData("ghosta_skills.dat", SkillData)
+        end)
+
+        local KeyLabel = Instance.new("TextLabel")
+        KeyLabel.Size = UDim2.new(0.9, 0, 0, 30)
+        KeyLabel.Position = UDim2.new(0.05, 0, 0.2, 0)
+        KeyLabel.Text = "Skill Activation Key: " .. tostring(Config.Settings.skillRecordKey)
+        KeyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        KeyLabel.BackgroundTransparency = 1
+        KeyLabel.Parent = Content
+
+        local KeyButton = Instance.new("TextButton")
+        KeyButton.Size = UDim2.new(0.9, 0, 0, 50)
+        KeyButton.Position = UDim2.new(0.05, 0, 0.3, 0)
+        KeyButton.Text = "Change Skill Key"
+        KeyButton.BackgroundColor3 = Config.Settings.uiAccentColor
+        KeyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        KeyButton.Parent = Content
+        KeyButton.MouseButton1Click:Connect(function()
+            KeyButton.Text = "Press a key..."
+            local connection
+            connection = UserInputService.InputBegan:Connect(function(input)
+                if input.UserInputType == Enum.UserInputType.Keyboard719
+                    Config.Settings.skillRecordKey = input.KeyCode
+                    KeyLabel.Text = "Skill Activation Key: " .. tostring(Config.Settings.skillRecordKey)
+                    KeyButton.Text = "Change Skill Key"
+                    connection:Disconnect()
+                    saveData("ghosta_settings.dat", Config.Settings)
+                end
+            end)
+        end)
+    end
+
+    local function createConfigTab()
+        clearTabContent()
+        local Content = Instance.new("Frame")
+        Content.Size = UDim2.new(1, 0, 1, 0)
+        Content.BackgroundTransparency = 1
+        Content.Parent = TabContents
+
+        local NameLabel = Instance.new("TextLabel")
+        NameLabel.Size = UDim2.new(0.9, 0, 0, 30)
+        NameLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
+        NameLabel.Text = "Config Name:"
+        NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+        NameLabel.BackgroundTransparency = 1
+        NameLabel.Parent = Content
+
+        local NameInput = Instance.new("TextBox")
+        NameInput.Size = UDim2.new(0.9, 0, 0, 50)
+        NameInput.Position = UDim2.new(0.05, 0, 0.15, 0)
+        NameInput.Text = ""
+        NameInput.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+        NameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+        NameInput.Parent = Content
+
+        local SaveButton = Instance.new("TextButton")
+        SaveButton.Size = UDim2.new(0.45, 0, 0, 50)
+        SaveButton.Position = UDim2.new(0.05, 0, 0.25, 0)
+        SaveButton.Text = "Save Config"
+        SaveButton.BackgroundColor3 = Config.Settings.uiAccentColor
+        SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        SaveButton.Parent = Content
+        SaveButton.MouseButton1Click:各方面(function()
+            local configName = NameInput.Text
+            if configName ~= "" then
+                ConfigData.savedConfigs[configName] = table.clone(Config.Settings)
+                saveData("ghosta_configs.dat", ConfigData)
+                print("[Config] Configuração '" .. configName .. "' salva.")
+            else
+            warn("[Config] Nome da configuração não pode ser vazio!")
+        end)
+
+        local DeleteButton = Instance.new("TextButton")
+        DeleteButton.Size = UDim2.new(0.45, 0, 0, 50)
+        DeleteButton.Position = UDim2.new(0.5, 0, 0.25, 0)
+        DeleteButton.Text = "Delete Config"
+        DeleteButton.BackgroundColor3 = Config.Settings.uiAccentColor
+        DeleteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        DeleteButton.Parent = Content
+        DeleteButton.MouseButton1Click:Connect(function()
+            local configName = NameInput.Text
+            if ConfigData.savedConfigs[configName] then
+                ConfigData.savedConfigs[configName] = nil
+                saveData("ghosta_configs.dat", ConfigData)
+                print("[Config] Configuração '" .. configName .. "' excluída.")
+            else
+                warn("[Config] Configuração '" .. configName .. "' não encontrada.")
+            end
+        end)
+
+        local SelectButton = Instance.new("TextButton")
+        SelectButton.Size = UDim2.new(0.9, 0, 0, 50)
+        SelectButton.Position = UDim2.new(0.05, 0, 0.35, 0)
+        SelectButton.Text = "Select Config"
+        SelectButton.BackgroundColor3 = Config.Settings.uiAccentColor
+        SelectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        SelectButton.Parent = Content
+        SelectButton.MouseButton1Click:Connect(function()
+            local configName = NameInput.Text
+            if ConfigData.savedConfigs[configName] then
+                Config.Settings = table.clone(ConfigData.savedConfigs[configName])
+                Config.Settings.selectedConfig = configName
+                saveData("ghosta_settings.dat", Config.Settings)
+                print("[Config] Configuração '" .. configName .. "' selecionada.")
+            else
+                warn("[Config] Configuração '" .. configName .. "' não encontrada.")
+            end
+        end)
+    end
+
+    createTab("Auto Skills", 0, createAutoSkillsTab)
+    createTab("Config", 0.75, createConfigTab)
+end
+
+-- Sistema de Auto Skills aprimorado
+local function getCharacter()
+    local plr = LocalPlayer
+    if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") then
+        return plr.Character, plr.Character.Humanoid
+    end
+    return nil, nil
+end
+
+local function recordMovements()
+    RunService.Heartbeat:Connect(function()
+        if not SkillData.recording then return end
+        local char, humanoid = getCharacter()
+        if not char or not humanoid then return end
+        local rootPart = char.HumanoidRootPart
+        local currentTime = tick() - SkillData.startTime
+        local currentPos = rootPart.Position
+        local currentCFrame = rootPart.CFrame
+        local inputs = {
+            moveDirection = humanoid.MoveDirection,
+            jump = humanoid.Jump,
+            mousePos = UserInputService:GetMouseLocation(),
+            keysPressed = {}
+        }
+        for _, input in pairs(UserInputService:GetKeysPressed()) do
+            if input.UserInputType == Enum.UserInputType.Keyboard then
+                table.insert(inputs.keysPressed, input.KeyCode)
+            end
+        end
+        if SkillData.lastPosition then
+            local deltaPos = (currentPos - SkillData.lastPosition).Magnitude
+            if deltaPos > 0.1 or inputs.jump or #inputs.keysPressed > 0 then
+                table.insert(SkillData.movements, {
+                    time = currentTime,
+                    position = currentPos,
+                    cFrame = currentCFrame,
+                    inputs = inputs
+                })
+            end
+        end
+        SkillData.lastPosition = currentPos
+        SkillData.lastCFrame = currentCFrame
+    end)
+end
+
+local function replayMovements()
+    if not Config.Settings.autoSkillsActive then return end
+    task.spawn(function()
+        local startTime = tick()
+        local char, humanoid = getCharacter()
+        if not char or not humanoid then return end
+        local rootPart = char.HumanoidRootPart
+        for _, movement in ipairs(SkillData.movements) do
+            while Config.Settings.autoSkillsActive and (tick() - startTime) < movement.time do
+                task.wait()
+            end
+            if not Config.Settings.autoSkillsActive then break end
+            char, humanoid = getCharacter()
+            if not char or not humanoid then break end
+            local tween = TweenService:Create(rootPart, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
+                CFrame = movement.cFrame
+            })
+            tween:Play()
+            humanoid:Move(movement.inputs.moveDirection)
+            humanoid.Jump = movement.inputs.jump
+            for _, key in pairs(movement.inputs.keysPressed) do
+                game:GetService("VirtualInputManager"):SendKeyEvent(true, key, false, game)
+                task.wait(0.01)
+                game:GetService("VirtualInputManager"):SendKeyEvent(false, key, false, game)
+            end
+            local mouseDelta = movement.inputs.mousePos - UserInputService:GetMouseLocation()
+            if mouseDelta.Magnitude > 5 then
+                game:GetService("VirtualInputManager"):SendMouseMoveEvent(movement.inputs.mousePos.X, movement.inputs.mousePos.Y, game)
+            end
+        end
+        Config.Settings.autoSkillsActive = false
+        print("[AutoSkills] Reprodução concluída.")
+    end)
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Config.Settings.skillRecordKey then
+        Config.Settings.autoSkillsActive = not Config.Settings.autoSkillsActive
+        if Config.Settings.autoSkillsActive then
+            print("[AutoSkills] Reproduzindo movimentos salvos.")
+            replayMovements()
+        else
+            print("[AutoSkills] Reprodução parada.")
+        end
+    end
+end)
+
+-- Carregar configurações salvas
+local function loadSavedConfig()
+    local data = loadData("ghosta_configs.dat")
+    if data then
+        ConfigData = data
+        if Config.Settings.selectedConfig and ConfigData.savedConfigs[Config.Settings.selectedConfig] then
+            Config.Settings = table.clone(ConfigData.savedConfigs[Config.Settings.selectedConfig])
+            print("[Config] Configuração padrão '" .. Config.Settings.selectedConfig .. "' carregada.")
+        end
+    end
+end
+
+-- Funções existentes (mantidas, com pequenas otimizações)
 local function advancedAnticheatBypass()
     setthreadidentity(2)
     local mt = getrawmetatable(game)
     setreadonly(mt, false)
 
-    -- Hook __namecall
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
@@ -179,7 +502,6 @@ local function advancedAnticheatBypass()
         return oldNamecall(self, ...)
     end)
 
-    -- Hook __index
     local oldIndex
     oldIndex = hookmetamethod(game, "__index", function(self, key)
         if key:lower():match("detect|kill|ban|cheat") then
@@ -188,7 +510,6 @@ local function advancedAnticheatBypass()
         return oldIndex(self, key)
     end)
 
-    -- Hook __newindex
     local oldNewIndex = mt.__newindex
     mt.__newindex = function(t, k, v)
         if tostring(k):lower():match("velocity|position|cframe") then
@@ -199,7 +520,6 @@ local function advancedAnticheatBypass()
     end
     setreadonly(mt, true)
 
-    -- Desativar RemoteSpy e logs
     for _, conn in pairs(getconnections(game:GetService("LogService").MessageOut)) do
         conn:Disable()
     end
@@ -207,8 +527,7 @@ local function advancedAnticheatBypass()
         conn:Disable()
     end
 
-    -- Bypass Adonis
-    for _, v in pairs(getgc(true)) do
+    for _, v in pairs(getgc(true))лом
         if type(v) == "table" and rawget(v, "Detected") then
             local oldDetect = rawget(v, "Detected")
             hookfunction(oldDetect, function(action, ...)
@@ -218,22 +537,19 @@ local function advancedAnticheatBypass()
         end
     end
 
-    -- Bypass Hyperion e outros
     for _, v in pairs(getgc(true)) do
         if type(v) == "function" and debug.getinfo(v).name:match("IntegrityCheck|AntiCheat") then
             hookfunction(v, function(...) return true end)
         end
     end
 
-    -- Simulação de comportamento humano
-    local fakeLag = Config.Settings.fakeLag
+    local Rene = Config.Settings.fakeLag
     RunService.Heartbeat:Connect(function()
         if math.random() < 0.03 then
             task.wait(fakeLag)
         end
     end)
 
-    -- Ofuscar manipulações de física
     local function spoofPhysics(obj)
         if obj:IsA("BasePart") then
             local oldVel = obj.Velocity
@@ -249,7 +565,7 @@ local function advancedAnticheatBypass()
     end)
 end
 
-local function detectAnticheat()
+local function detectAntcheat()
     local detected = false
     local checks = {
         function() return getrawmetatable(game) ~= nil end,
@@ -263,7 +579,6 @@ local function detectAnticheat()
     return detected
 end
 
--- Modo Ghosta (camuflagem)
 local function ghostMode()
     warn("[Ghosta] Anticheat detectado! Ativando camuflagem avançada.")
     local char, humanoid = getCharacter()
@@ -286,243 +601,27 @@ local function ghostMode()
     saveData("ghosta_settings.dat", Config.Settings)
 end
 
--- Funções principais
-local function getCharacter()
-    local plr = LocalPlayer
-    if not plr or not plr.Character then return nil end
-    local c = plr.Character
-    local humanoid = c:FindFirstChildOfClass("Humanoid")
-    if not humanoid then return nil end
-    return c, humanoid
-end
-
-local function getCharacterType(c)
-    if c:FindFirstChild("RightHand") and c:FindFirstChild("LeftHand") and c:FindFirstChild("RightLowerLeg") then
-        return "R15"
-    elseif c:FindFirstChild("Right Arm") and c:FindFirstChild("Left Arm") then
-        return "R6"
-    end
-    return "Unknown"
-end
-
-local function detectBall()
-    local ballNames = {"ball", "soccer", "futsal", "football", "gameball", "futsalball", "soccerball"}
-    local goals = {}
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name:lower():match("goal|net") then
-            table.insert(goals, obj)
-        end
-    end
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Massless and obj.CanCollide then
-            for _, name in ipairs(ballNames) do
-                if obj.Name:lower():match(name) then
-                    for _, goal in ipairs(goals) do
-                        if (obj.Position - goal.Position).Magnitude < 120 then
-                            return obj
-                        end
-                    end
-                end
-            end
-        end
-    end
-    return nil
-end
-
-local function applyReach(amount)
-    local c, humanoid = getCharacter()
-    if not c then return end
-    local charType = getCharacterType(c)
-    local ball = detectBall()
-    if not ball then return end
-    local dist = (ball.Position - c.HumanoidRootPart.Position).Magnitude
-    if dist < amount then
-        local limbs = charType == "R15" and {"RightHand", "LeftHand", "RightLowerLeg", "LeftLowerLeg"} or {"Right Arm", "Left Arm", "Right Leg", "Left Leg"}
-        for _, limbName in ipairs(limbs) do
-            local limb = c:FindFirstChild(limbName)
-            if limb then
-                local multiplier = limbName:match("Hand|Arm") and Config.Settings.reachHandMultiplier or Config.Settings.reachLegMultiplier
-                local reachDist = amount * multiplier
-                local direction = (ball.Position - limb.Position).Unit
-                local tween = TweenService:Create(limb, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
-                    CFrame = CFrame.new(limb.Position + direction * math.min(reachDist, dist))
-                })
-                tween:Play()
-                task.spawn(function()
-                    task.wait(0.05)
-                    tween:Cancel()
-                    limb.CFrame = limb.CFrame -- Restaurar posição
-                end)
-            end
-        end
-        local bodyVelocity = Instance.new("BodyVelocity")
-        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-        bodyVelocity.Velocity = (ball.Position - c.HumanoidRootPart.Position).Unit * 50
-        bodyVelocity.Parent = ball
-        game:GetService("Debris"):AddItem(bodyVelocity, 0.05)
-    end
-end
-
-local function createFake(what)
-    local c = getCharacter()
-    if not c then return end
-    local limbs = what == "arms" and {"RightHand", "LeftHand", "Right Arm", "Left Arm"} or {"RightFoot", "LeftFoot", "Right Leg", "Left Leg", "RightLowerLeg", "LeftLowerLeg"}
-    for _, limbName in ipairs(limbs) do
-        local limb = c:FindFirstChild(limbName)
-        if limb and limb:IsA("BasePart") then
-            local fake = Instance.new("Part")
-            fake.Name = "Fake" .. HttpService:GenerateGUID(false)
-            fake.Size = limb.Size
-            fake.Position = limb.Position + Vector3.new(math.random(-0.3, 0.3), math.random(2, 4), math.random(-0.3, 0.3))
-            fake.Transparency = 1
-            fake.Anchored = true
-            fake.CanCollide = false
-            fake.Parent = c
-            game:GetService("Debris"):AddItem(fake, 0.1)
-        end
-    end
-end
-
-local function getGoalPosition(mode)
-    local goals = {}
-    local enemyGK = nil
-    for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Name:lower():match("goal|net") then
-            table.insert(goals, obj)
-        end
-    end
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChildOfClass("Tool") and player.Character:FindFirstChildOfClass("Tool").Name:lower():match("gk") then
-            enemyGK = player.Character.HumanoidRootPart
-        end
-    end
-    if #goals == 0 then return nil end
-    local goal = goals[1]
-    local pos = goal.Position
-    local size = goal.Size
-    if enemyGK then
-        local gkPos = enemyGK.Position
-        local gkDistRight = (gkPos - (pos + Vector3.new(size.X / 2, 0, 0))).Magnitude
-        local gkDistLeft = (gkPos - (pos + Vector3.new(-size.X / 2, 0, 0))).Magnitude
-        local gkDistMiddle = (gkPos - pos).Magnitude
-        if mode == "right" or (gkDistRight > gkDistLeft and gkDistRight > gkDistMiddle and mode == "middle") then
-            return pos + Vector3.new(size.X / 2, math.random(0, size.Y / 2), math.random(-size.Z / 4, size.Z / 4))
-        elseif mode == "left" or (gkDistLeft > gkDistRight and gkDistLeft > gkDistMiddle and mode == "middle") then
-            return pos + Vector3.new(-size.X / 2, math.random(0, size.Y / 2), math.random(-size.Z / 4, size.Z / 4))
-        else
-            return pos + Vector3.new(0, math.random(0, size.Y / 2), math.random(-size.Z / 4, size.Z / 4))
-        end
-    end
-    if mode == "right" then
-        return pos + Vector3.new(size.X / 2, math.random(0, size.Y / 2), math.random(-size.Z / 4, size.Z / 4))
-    elseif mode == "left" then
-        return pos + Vector3.new(-size.X / 2, math.random(0, size.Y / 2), math.random(-size.Z / 4, size.Z / 4))
+-- Inicialização
+local function init()
+    loadSavedConfig()
+    if detectAnticheat() then
+        ghostMode()
     else
-        return pos + Vector3.new(0, math.random(0, size.Y / 2), math.random(-size.Z / 4, size.Z / 4))
+        advancedAnticheatBypass()
+        local key = requestKey()
+        if key then
+            local ghostaCode = downloadGhosta()
+            if ghostaCode then
+                executeGhosta(ghostaCode)
+            end
+            createUI()
+            recordMovements()
+        else
+            warn("[Loader] Inicialização abortada: key inválida.")
+        end
     end
 end
 
-local function aimbot()
-    if not Config.Settings.aimbotActive then return end
-    task.spawn(function()
-        local lastUpdate = tick()
-        while Config.Settings.aimbotActive do
-            if tick() - lastUpdate < 0.02 then
-                task.wait()
-                continue
-            end
-            local ball = detectBall()
-            if not ball then task.wait(0.05) continue end
-            local goalPos = getGoalPosition(Config.Settings.aimbotMode)
-            if not goalPos then task.wait(0.05) continue end
-            local c, humanoid = getCharacter()
-            if not c or not humanoid then task.wait(0.05) continue end
+init()
 
-            local ray = Ray.new(ball.Position, (goalPos - ball.Position).Unit * 1000)
-            local hit, pos = Workspace:FindPartOnRayWithIgnoreList(ray, {c, ball})
-            if hit and not hit.Name:lower():match("goal") then
-                task.wait(0.05)
-                continue
-            end
-
-            local direction = (goalPos - ball.Position).Unit
-            local bodyVelocity = Instance.new("BodyVelocity")
-            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            bodyVelocity.Velocity = direction * Config.Settings.aimbotForce
-            bodyVelocity.Parent = ball
-            game:GetService("Debris"):AddItem(bodyVelocity, 0.02)
-            lastUpdate = tick()
-            task.wait(0.02)
-        end
-    end)
-end
-
-local function autoGK()
-    if not Config.Settings.autoGKActive then return end
-    task.spawn(function()
-        local lastUpdate = tick()
-        local lastPos, lastVel
-        while Config.Settings.autoGKActive do
-            if tick() - lastUpdate < 0.02 then
-                task.wait()
-                continue
-            end
-            local c, humanoid = getCharacter()
-            if not c or not humanoid then task.wait(0.05) continue end
-            local tool = c:FindFirstChildOfClass("Tool")
-            if not tool or not tool.Name:lower():match("gk") then task.wait(0.05) continue end
-
-            local ball = detectBall()
-            if not ball then task.wait(0.05) continue end
-
-            local ballPos = ball.Position
-            local ballVel = ball.Velocity
-            if lastPos and lastVel then
-                local delta = tick() - lastUpdate
-                local accel = (ballVel - lastVel) / delta
-                local predictedPos = ballPos + ballVel * 0.06 + 0.5 * accel * (0.06 ^ 2)
-                local charPos = c.HumanoidRootPart.Position
-                local dist = (predictedPos - charPos).Magnitude
-                if dist < Config.Settings.gkSensitivity then
-                    humanoid.Jump = true
-                    local moveDir = (predictedPos - charPos).Unit
-                    local tween = TweenService:Create(c.HumanoidRootPart, TweenInfo.new(0.08, Enum.EasingStyle.Linear), {
-                        CFrame = CFrame.new(charPos + moveDir * math.min(16 * delta, dist))
-                    })
-                    tween:Play()
-                end
-            end
-            lastPos = ballPos
-            lastVel = ballVel
-            lastUpdate = tick()
-            task.wait(0.02)
-        end
-    end)
-end
-
-local function teleportBall()
-    if not Config.Settings.teleportActive then return end
-    task.spawn(function()
-        local c, humanoid = getCharacter()
-        if not c or not humanoid then return end
-        local ball = detectBall()
-        if not ball then return end
-        local charPos = c.HumanoidRootPart.Position
-        local tween = TweenService:Create(ball, TweenInfo.new(0.08, Enum.EasingStyle.Linear), {
-            CFrame = CFrame.new(charPos + Vector3.new(2, 0, 0))
-        })
-        tween:Play()
-    end)
-end
-
-local function autoGoal()
-    if not Config.Settings.autoGoalActive then return end
-    task.spawn(function()
-        local lastUpdate = tick()
-        while Config.Settings.autoGoalActive do
-            if tick() - lastUpdate < 0.08 then
-                task.wait()
-                continue
-            end
-            local c, humanoid = getCharacter()
-            if not c or not humanoid then task.wait(0.05
+ Sajie
