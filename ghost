@@ -1,0 +1,145 @@
+-- ReachGhostX UI - 3 Abas (Reach / Fake / Kill)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
+
+-- Criar GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "RGX_UI" .. math.random(1000, 9999)
+gui.ResetOnSpawn = false
+gui.Parent = CoreGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 400, 0, 320)
+frame.Position = UDim2.new(0.5, -200, 0.5, -160)
+frame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+frame.BorderSizePixel = 0
+frame.Parent = gui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 12)
+uiCorner.Parent = frame
+
+local tabNames = {"Reach", "Fake", "Kill"}
+local tabs, pages = {}, {}
+
+local tabBar = Instance.new("Frame")
+tabBar.Size = UDim2.new(1, 0, 0, 40)
+tabBar.BackgroundTransparency = 1
+tabBar.Parent = frame
+
+for i, name in ipairs(tabNames) do
+    local btn = Instance.new("TextButton")
+    btn.Text = name
+    btn.Size = UDim2.new(1 / #tabNames, 0, 1, 0)
+    btn.Position = UDim2.new((i - 1) / #tabNames, 0, 0, 0)
+    btn.BackgroundTransparency = 1
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextSize = 18
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = tabBar
+    tabs[name] = btn
+
+    local page = Instance.new("Frame")
+    page.Size = UDim2.new(1, -10, 1, -50)
+    page.Position = UDim2.new(0, 5, 0, 45)
+    page.BackgroundTransparency = 1
+    page.Visible = i == 1
+    page.Parent = frame
+    pages[name] = page
+end
+
+local function switchTo(tab)
+    for name, page in pairs(pages) do
+        page.Visible = name == tab
+    end
+end
+
+for name, btn in pairs(tabs) do
+    btn.MouseButton1Click:Connect(function()
+        switchTo(name)
+    end)
+end
+
+-- Função Slider Reach Arms/Legs
+local function createSlider(parent, label, min, max, default, callback)
+    local text = Instance.new("TextLabel")
+    text.Text = label .. ": " .. tostring(default)
+    text.Size = UDim2.new(0, 150, 0, 20)
+    text.Position = UDim2.new(0, 10, 0, 0)
+    text.BackgroundTransparency = 1
+    text.TextColor3 = Color3.new(1, 1, 1)
+    text.TextSize = 16
+    text.Font = Enum.Font.Gotham
+    text.TextXAlignment = Enum.TextXAlignment.Left
+    text.Parent = parent
+
+    local bg = Instance.new("Frame")
+    bg.Size = UDim2.new(0, 200, 0, 20)
+    bg.Position = UDim2.new(0, 10, 0, 25)
+    bg.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    bg.BorderSizePixel = 0
+    bg.Parent = parent
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    fill.BackgroundColor3 = Color3.new(0, 1, 0)
+    fill.BorderSizePixel = 0
+    fill.Parent = bg
+
+    local dragging = false
+
+    bg.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = true end
+    end)
+    bg.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+    end)
+    bg.InputChanged:Connect(function(i)
+        if dragging and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local x = math.clamp(i.Position.X - bg.AbsolutePosition.X, 0, bg.AbsoluteSize.X)
+            local val = math.floor(min + ((x / bg.AbsoluteSize.X) * (max - min)))
+            fill.Size = UDim2.new((val - min) / (max - min), 0, 1, 0)
+            text.Text = label .. ": " .. val
+            callback(val)
+        end
+    end)
+end
+
+-- Reach
+local ReachDist_Arms, ReachDist_Legs = 15, 15
+createSlider(pages["Reach"], "Reach Arms", 0, 100, 15, function(v) ReachDist_Arms = v end)
+createSlider(pages["Reach"], "Reach Legs", 0, 100, 15, function(v) ReachDist_Legs = v end)
+
+-- Fake
+local function createButton(parent, label, callback)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0, 200, 0, 30)
+    btn.Position = UDim2.new(0, 10, 0, 10 + #parent:GetChildren() * 35)
+    btn.Text = label
+    btn.BackgroundColor3 = Color3.new(0.2, 0.2, 0.2)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 16
+    btn.BorderSizePixel = 0
+    btn.Parent = parent
+    btn.MouseButton1Click:Connect(callback)
+end
+
+createButton(pages["Fake"], "Fake Arms", function()
+    -- Criar bracos falsos (universais)
+end)
+
+createButton(pages["Fake"], "Fake Legs", function()
+    -- Criar pernas falsas (universais)
+end)
+
+-- Kill
+createButton(pages["Kill"], "Stream Mode", function()
+    gui.Enabled = false
+end)
+
+createButton(pages["Kill"], "Fechar UI", function()
+    gui:Destroy()
+end)
