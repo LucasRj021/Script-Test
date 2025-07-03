@@ -5,41 +5,22 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
-local Lighting = game:GetService("Lighting")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
 -- Configurações globais
 local Config = {
-    Keys = {
-        Mensal_1 = "Mensal_1",
-        Mensal_2 = "Mensal_2",
-        Mensal_3 = "Mensal_3",
-        Lifetime_1 = "Lifetime_1",
-        Lifetime_2 = "Lifetime_2"
-    },
-    URLs = {
-        Ghosta = "https://raw.githubusercontent.com/LucasRj021/Script-Test/e4140912a56bc36f6c37e7d579a1cba4ce51e0b7/ghosta.lua",
-        ValidationAPI = "https://your-api.com/validate"
-    },
     Settings = {
         uiColor = Color3.fromRGB(30, 30, 30),
         uiAccentColor = Color3.fromRGB(0, 170, 255),
-        reachValue = 100,
-        uiVisible = true,
+        reachLeg = 50,
+        reachArm = 50,
+        fakeLegActive = false,
+        fakeArmActive = false,
         aimbotActive = false,
-        aimbotMode = "middle",
-        aimbotForce = 70,
         autoGKActive = false,
-        gkSensitivity = 25,
-        teleportActive = false,
-        autoGoalActive = false,
-        espActive = false,
-        fakeLag = 0.02,
-        reachDynamic = true,
-        reachHandMultiplier = 1.5,
-        reachLegMultiplier = 1.8,
         skillRecordKey = Enum.KeyCode.F,
         autoSkillsActive = false,
         selectedConfig = nil
@@ -47,12 +28,6 @@ local Config = {
 }
 
 -- Persistência de dados
-local KeyData = {
-    key = nil,
-    activatedAt = nil,
-    duration = 30 * 24 * 60 * 60 -- 30 dias em segundos
-}
-
 local SkillData = {
     recording = false,
     movements = {},
@@ -84,150 +59,156 @@ local function loadData(file)
     return nil
 end
 
--- Sistema de validação de keys melhorado
-local function validateKeyOnline(key)
-    local success, response = pcall(function()
-        return HttpService:GetAsync(Config.URLs.ValidationAPI .. "?key=" .. HttpService:UrlEncode(key))
-    end)
-    if success and response then
-        local data = HttpService:JSONDecode(response)
-        if data.valid then
-            KeyData.key = key
-            KeyData.activatedAt = data.activatedAt or os.time()
-            KeyData.duration = (key == Config.Keys.Lifetime_1 or key == Config.Keys.Lifetime_2) and math.huge or (data.duration or KeyData.duration)
-            saveData("ghosta_key.dat", KeyData)
-            print("[Loader] Key validada online com sucesso: " .. key)
-            return true
-        end
-    end
-    warn("[Loader] Falha na validação online da key: " .. key)
-    return false
-end
-
-local function loadSavedKey()
-    local data = loadData("ghosta_key.dat")
-    if data then
-        KeyData = data
-        if isKeyValid() then
-            print("[Loader] Key carregada do arquivo: " .. KeyData.key)
+-- Detectar tipo de personagem (R6 ou R15)
+local function isR6(character)
+    if character then
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.RigType == Enum.HumanoidRigType.R6 then
             return true
         end
     end
     return false
 end
 
-local function isKeyValid()
-    if KeyData.key == Config.Keys.Lifetime_1 or KeyData.key == Config.Keys.Lifetime_2 then
-        return true
-    end
-    if (KeyData.key == Config.Keys.Mensal_1 or KeyData.key == Config.Keys.Mensal_2 or KeyData.key == Config.Keys.Mensal_3) and KeyData.activatedAt then
-        local elapsedTime = os.time() - KeyData.activatedAt
-        if elapsedTime <= KeyData.duration then
-            print("[Loader] Key válida, tempo restante: " .. math.floor((KeyData.duration - elapsedTime) / (24 * 60 * 60)) .. " dias")
-            return true
-        else
-            warn("[Loader] Key expirada: " .. KeyData.key)
-            KeyData.key = nil
-            KeyData.activatedAt = nil
-            saveData("ghosta_key.dat", KeyData)
-            return false
+-- Detectar bola no jogo
+local function detectBall()
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():match("ball") or obj.Name:lower():match("soccer")) then
+            return obj
         end
     end
-    return false
-end
-
-local function activateKey(k)
-    if k == Config.Keys.Lifetime_1 or k == Config.Keys.Lifetime_2 or k == Config.Keys.Mensal_1 or k == Config.Keys.Mensal_2 or k == Config.Keys.Mensal_3 then
-        KeyData.key = k
-        KeyData.activatedAt = os.time()
-        KeyData.duration = (k == Config.Keys.Lifetime_1 or k == Config.Keys.Lifetime_2) and math.huge or KeyData.duration
-        saveData("ghosta_key.dat", KeyData)
-        print("[Loader] Key " .. k .. " ativada com sucesso.")
-        return true
-    end
-    warn("[Loader] Key inválida: " .. k)
-    return false
-end
-
-local function requestKey()
-    if loadSavedKey() then return KeyData.key end
-    print("[Loader] Insira sua Key:")
-    local inputKey = io.read() or ""
-    if validateKeyOnline(inputKey) or activateKey(inputKey) then
-        return inputKey
-    end
-    warn("[Loader] Key inválida ou falha na validação. Tente novamente.")
     return nil
 end
 
--- Download do script Ghosta
-local function downloadGhosta()
-    for i = 1, 5 do
-        local success, response = pcall(function()
-            return HttpService:GetAsync(Config.URLs.Ghosta)
-        end)
-        if success and response then return response end
-        warn("[Loader] Tentativa " .. i .. " falhou. Retentando...")
-        task.wait(1)
+-- Detectar gol adversário
+local function detectGoal()
+    for _, obj in pairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj.Name:lower():match("goal") then
+            return obj
+        end
     end
-    warn("[Loader] Falha ao baixar ghosta.lua após 5 tentativas!")
-    return nil
+    return Workspace:FindFirstChildWhichIsA("BasePart") -- Fallback
 end
 
-local function executeGhosta(code)
-    local f, err = loadstring(code)
-    if not f then
-        warn("[Loader] Erro no loadstring: " .. tostring(err))
-        return false
-    end
-    local success, err2 = pcall(f)
-    if not success then
-        warn("[Loader] Erro ao executar ghosta.lua: " .. tostring(err2))
-        return false
-    end
-    print("[Loader] Ghosta executado com sucesso.")
-    return true
-end
-
--- Interface do usuário
+-- Interface do usuário profissional
 local function createUI()
     local ScreenGui = Instance.new("ScreenGui")
-    ScreenGui.Name = "GhostaUI"
+    ScreenGui.Name = "FootballUI"
     ScreenGui.Parent = CoreGui
     ScreenGui.IgnoreGuiInset = true
+    ScreenGui.ResetOnSpawn = false
 
     local MainFrame = Instance.new("Frame")
-    MainFrame.Size = UDim2.new(0, 400, 0, 500)
-    MainFrame.Position = UDim2.new(0.5, -200, 0.5, -250)
+    MainFrame.Size = UDim2.new(0, 500, 0, 600)
+    MainFrame.Position = UDim2.new(0.5, -250, 0.5, -300)
     MainFrame.BackgroundColor3 = Config.Settings.uiColor
     MainFrame.BorderSizePixel = 0
-    MainFrame.Parent = Screenocalyptic
+    MainFrame.Parent = ScreenGui
+    MainFrame.ClipsDescendants = true
+
+    local UICorner = Instance.new("UICorner")
+    UICorner.CornerRadius = UDim.new(0, 10)
+    UICorner.Parent = MainFrame
+
     local Tabs = Instance.new("Frame")
-    Tabs.Size = UDim2.new(1, 0, 0, 30)
+    Tabs.Size = UDim2.new(1, 0, 0, 40)
     Tabs.BackgroundColor3 = Config.Settings.uiAccentColor
     Tabs.Parent = MainFrame
 
+    local TabContents = Instance.new("Frame")
+    TabContents.Size = UDim2.new(1, 0, 1, -40)
+    TabContents.Position = UDim2.new(0, 0, 0, 40)
+    TabContents.BackgroundTransparency = 1
+    TabContents.Parent = MainFrame
+
     local function createTab(name, position, callback)
         local TabButton = Instance.new("TextButton")
-        TabButton.Size = UDim2.new(0.25, 0, 1, 0)
+        TabButton.Size = UDim2.new(0.2, 0, 1, 0)
         TabButton.Position = UDim2.new(position, 0, 0, 0)
         TabButton.Text = name
         TabButton.BackgroundColor3 = Config.Settings.uiAccentColor
         TabButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        TabButton.Font = Enum.Font.SourceSansBold
+        TabButton.TextSize = 16
         TabButton.Parent = Tabs
         TabButton.MouseButton1Click:Connect(callback)
+        local UICorner = Instance.new("UICorner")
+        UICorner.CornerRadius = UDim.new(0, 5)
+        UICorner.Parent = TabButton
     end
-
-    local TabContents = Instance.new("Frame")
-    TabContents.Size = UDim2.new(1, 0, 1, -30)
-    TabContents.Position = UDim2.new(0, 0, 0, 30)
-    TabContents.BackgroundTransparency = 1
-    TabContents.Parent = MainFrame
 
     local function clearTabContent()
         for _, child in pairs(TabContents:GetChildren()) do
             child:Destroy()
         end
+    end
+
+    local function createMainTab()
+        clearTabContent()
+        local Content = Instance.new("Frame")
+        Content.Size = UDim2.new(1, 0, 1, 0)
+        Content.BackgroundTransparency = 1
+        Content.Parent = TabContents
+
+        local function createSlider(name, setting, min, max, yPos)
+            local SliderFrame = Instance.new("Frame")
+            SliderFrame.Size = UDim2.new(0.9, 0, 0, 50)
+            SliderFrame.Position = UDim2.new(0.05, 0, yPos, 0)
+            SliderFrame.BackgroundTransparency = 1
+            SliderFrame.Parent = Content
+
+            local Label = Instance.new("TextLabel")
+            Label.Size = UDim2.new(0.4, 0, 0, 30)
+            Label.Text = name .. ": " .. Config.Settings[setting]
+            Label.TextColor3 = Color3.fromRGB(255, 255, 255)
+            Label.BackgroundTransparency = 1
+            Label.Font = Enum.Font.SourceSans
+            Label.TextSize = 14
+            Label.Parent = SliderFrame
+
+            local Slider = Instance.new("TextBox")
+            Slider.Size = UDim2.new(0.5, 0, 0, 30)
+            Slider.Position = UDim2.new(0.4, 0, 0, 0)
+            Slider.Text = tostring(Config.Settings[setting])
+            Slider.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+            Slider.TextColor3 = Color3.fromRGB(255, 255, 255)
+            Slider.Parent = SliderFrame
+            Slider.TextChanged:Connect(function()
+                local value = tonumber(Slider.Text)
+                if value then
+                    Config.Settings[setting] = math.clamp(value, min, max)
+                    Label.Text = name .. ": " .. Config.Settings[setting]
+                    saveData("football_settings.dat", Config.Settings)
+                end
+            end)
+        end
+
+        local function createToggle(name, setting, yPos)
+            local ToggleButton = Instance.new("TextButton")
+            ToggleButton.Size = UDim2.new(0.9, 0, 0, 50)
+            ToggleButton.Position = UDim2.new(0.05, 0, yPos, 0)
+            ToggleButton.Text = name .. ": " .. (Config.Settings[setting] and "ON" or "OFF")
+            ToggleButton.BackgroundColor3 = Config.Settings.uiAccentColor
+            ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+            ToggleButton.Font = Enum.Font.SourceSans
+            ToggleButton.TextSize = 14
+            ToggleButton.Parent = Content
+            ToggleButton.MouseButton1Click:Connect(function()
+                Config.Settings[setting] = not Config.Settings[setting]
+                ToggleButton.Text = name .. ": " .. (Config.Settings[setting] and "ON" or "OFF")
+                saveData("football_settings.dat", Config.Settings)
+            end)
+            local UICorner = Instance.new("UICorner")
+            UICorner.CornerRadius = UDim.new(0, 5)
+            UICorner.Parent = ToggleButton
+        end
+
+        createSlider("Reach Leg", "reachLeg", 0, 100, 0.1)
+        createSlider("Reach Arm", "reachArm", 0, 100, 0.2)
+        createToggle("Fake Leg", "fakeLegActive", 0.3)
+        createToggle("Fake Arm", "fakeArmActive", 0.4)
+        createToggle("Aimbot", "aimbotActive", 0.5)
+        createToggle("Auto-GK", "autoGKActive", 0.6)
     end
 
     local function createAutoSkillsTab()
@@ -243,6 +224,8 @@ local function createUI()
         RecordButton.Text = "Start Record Skills"
         RecordButton.BackgroundColor3 = Config.Settings.uiAccentColor
         RecordButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        RecordButton.Font = Enum.Font.SourceSans
+        RecordButton.TextSize = 14
         RecordButton.Parent = Content
         RecordButton.MouseButton1Click:Connect(function()
             SkillData.recording = true
@@ -250,6 +233,9 @@ local function createUI()
             SkillData.startTime = tick()
             print("[AutoSkills] Iniciando gravação de movimentos.")
         end)
+        local UICorner = Instance.new("UICorner")
+        UICorner.CornerRadius = UDim.new(0, 5)
+        UICorner.Parent = RecordButton
 
         local StopButton = Instance.new("TextButton")
         StopButton.Size = UDim2.new(0.45, 0, 0, 50)
@@ -257,12 +243,17 @@ local function createUI()
         StopButton.Text = "Stop Record Skills"
         StopButton.BackgroundColor3 = Config.Settings.uiAccentColor
         StopButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        StopButton.Font = Enum.Font.SourceSans
+        StopButton.TextSize = 14
         StopButton.Parent = Content
         StopButton.MouseButton1Click:Connect(function()
             SkillData.recording = false
             print("[AutoSkills] Gravação parada. " .. #SkillData.movements .. " movimentos salvos.")
-            saveData("ghosta_skills.dat", SkillData)
+            saveData("football_skills.dat", SkillData)
         end)
+        local UICorner2 = Instance.new("UICorner")
+        UICorner2.CornerRadius = UDim.new(0, 5)
+        UICorner2.Parent = StopButton
 
         local KeyLabel = Instance.new("TextLabel")
         KeyLabel.Size = UDim2.new(0.9, 0, 0, 30)
@@ -270,6 +261,8 @@ local function createUI()
         KeyLabel.Text = "Skill Activation Key: " .. tostring(Config.Settings.skillRecordKey)
         KeyLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
         KeyLabel.BackgroundTransparency = 1
+        KeyLabel.Font = Enum.Font.SourceSans
+        KeyLabel.TextSize = 14
         KeyLabel.Parent = Content
 
         local KeyButton = Instance.new("TextButton")
@@ -278,105 +271,97 @@ local function createUI()
         KeyButton.Text = "Change Skill Key"
         KeyButton.BackgroundColor3 = Config.Settings.uiAccentColor
         KeyButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+        KeyButton.Font = Enum.Font.SourceSans
+        KeyButton.TextSize = 14
         KeyButton.Parent = Content
         KeyButton.MouseButton1Click:Connect(function()
             KeyButton.Text = "Press a key..."
             local connection
             connection = UserInputService.InputBegan:Connect(function(input)
-                if input.UserInputType == Enum.UserInputType.Keyboard719
+                if input.UserInputType == Enum.UserInputType.Keyboard then
                     Config.Settings.skillRecordKey = input.KeyCode
                     KeyLabel.Text = "Skill Activation Key: " .. tostring(Config.Settings.skillRecordKey)
                     KeyButton.Text = "Change Skill Key"
                     connection:Disconnect()
-                    saveData("ghosta_settings.dat", Config.Settings)
+                    saveData("football_settings.dat", Config.Settings)
                 end
             end)
         end)
+        local UICorner3 = Instance.new("UICorner")
+        UICorner3.CornerRadius = UDim.new(0, 5)
+        UICorner3.Parent = KeyButton
     end
 
-    local function createConfigTab()
-        clearTabContent()
-        local Content = Instance.new("Frame")
-        Content.Size = UDim2.new(1, 0, 1, 0)
-        Content.BackgroundTransparency = 1
-        Content.Parent = TabContents
-
-        local NameLabel = Instance.new("TextLabel")
-        NameLabel.Size = UDim2.new(0.9, 0, 0, 30)
-        NameLabel.Position = UDim2.new(0.05, 0, 0.1, 0)
-        NameLabel.Text = "Config Name:"
-        NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        NameLabel.BackgroundTransparency = 1
-        NameLabel.Parent = Content
-
-        local NameInput = Instance.new("TextBox")
-        NameInput.Size = UDim2.new(0.9, 0, 0, 50)
-        NameInput.Position = UDim2.new(0.05, 0, 0.15, 0)
-        NameInput.Text = ""
-        NameInput.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-        NameInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-        NameInput.Parent = Content
-
-        local SaveButton = Instance.new("TextButton")
-        SaveButton.Size = UDim2.new(0.45, 0, 0, 50)
-        SaveButton.Position = UDim2.new(0.05, 0, 0.25, 0)
-        SaveButton.Text = "Save Config"
-        SaveButton.BackgroundColor3 = Config.Settings.uiAccentColor
-        SaveButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        SaveButton.Parent = Content
-        SaveButton.MouseButton1Click:各方面(function()
-            local configName = NameInput.Text
-            if configName ~= "" then
-                ConfigData.savedConfigs[configName] = table.clone(Config.Settings)
-                saveData("ghosta_configs.dat", ConfigData)
-                print("[Config] Configuração '" .. configName .. "' salva.")
-            else
-            warn("[Config] Nome da configuração não pode ser vazio!")
-        end)
-
-        local DeleteButton = Instance.new("TextButton")
-        DeleteButton.Size = UDim2.new(0.45, 0, 0, 50)
-        DeleteButton.Position = UDim2.new(0.5, 0, 0.25, 0)
-        DeleteButton.Text = "Delete Config"
-        DeleteButton.BackgroundColor3 = Config.Settings.uiAccentColor
-        DeleteButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        DeleteButton.Parent = Content
-        DeleteButton.MouseButton1Click:Connect(function()
-            local configName = NameInput.Text
-            if ConfigData.savedConfigs[configName] then
-                ConfigData.savedConfigs[configName] = nil
-                saveData("ghosta_configs.dat", ConfigData)
-                print("[Config] Configuração '" .. configName .. "' excluída.")
-            else
-                warn("[Config] Configuração '" .. configName .. "' não encontrada.")
-            end
-        end)
-
-        local SelectButton = Instance.new("TextButton")
-        SelectButton.Size = UDim2.new(0.9, 0, 0, 50)
-        SelectButton.Position = UDim2.new(0.05, 0, 0.35, 0)
-        SelectButton.Text = "Select Config"
-        SelectButton.BackgroundColor3 = Config.Settings.uiAccentColor
-        SelectButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-        SelectButton.Parent = Content
-        SelectButton.MouseButton1Click:Connect(function()
-            local configName = NameInput.Text
-            if ConfigData.savedConfigs[configName] then
-                Config.Settings = table.clone(ConfigData.savedConfigs[configName])
-                Config.Settings.selectedConfig = configName
-                saveData("ghosta_settings.dat", Config.Settings)
-                print("[Config] Configuração '" .. configName .. "' selecionada.")
-            else
-                warn("[Config] Configuração '" .. configName .. "' não encontrada.")
-            end
-        end)
-    end
-
-    createTab("Auto Skills", 0, createAutoSkillsTab)
-    createTab("Config", 0.75, createConfigTab)
+    createTab("Main", 0, createMainTab)
+    createTab("Auto Skills", 0.2, createAutoSkillsTab)
 end
 
--- Sistema de Auto Skills aprimorado
+-- Funções de Reach
+local function applyReach(character, partName, reachValue)
+    if not character then return end
+    local part = character:FindFirstChild(partName)
+    if part and part:IsA("BasePart") then
+        part.Size = Vector3.new(part.Size.X, part.Size.Y, part.Size.Z + reachValue / 10)
+    end
+end
+
+-- Funções de Fake Limbs
+local function createFakeLimb(character, partName)
+    if not character then return nil end
+    local part = character:FindFirstChild(partName)
+    if part and part:IsA("BasePart") then
+        local fakePart = Instance.new("Part")
+        fakePart.Size = part.Size
+        fakePart.Position = part.Position
+        fakePart.Anchored = true
+        fakePart.Transparency = 1
+        fakePart.CanCollide = true
+        fakePart.Parent = Workspace
+        return fakePart
+    end
+    return nil
+end
+
+-- Aimbot para chutar no gol
+local function aimbot()
+    RunService.Heartbeat:Connect(function()
+        if not Config.Settings.aimbotActive then return end
+        local ball = detectBall()
+        local goal = detectGoal()
+        local character, humanoid = getCharacter()
+        if not ball or not goal or not character or not humanoid then return end
+        local rootPart = character.HumanoidRootPart
+        local direction = (goal.Position - ball.Position).Unit
+        local kickForce = 100
+        ball.Velocity = direction * kickForce
+        rootPart.CFrame = CFrame.new(rootPart.Position, ball.Position)
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+        task.wait(0.01)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+    end)
+end
+
+-- Auto-GK com cálculo de trajetória
+local function autoGK()
+    RunService.Heartbeat:Connect(function()
+        if not Config.Settings.autoGKActive then return end
+        local ball = detectBall()
+        local character, humanoid = getCharacter()
+        if not ball or not character or not humanoid then return end
+        local rootPart = character.HumanoidRootPart
+        local ballVelocity = ball.Velocity
+        local predictedPos = ball.Position + ballVelocity * 0.1
+        local direction = (predictedPos - rootPart.Position).Unit
+        humanoid:Move(direction)
+        if (predictedPos - rootPart.Position).Magnitude < 5 then
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            task.wait(0.01)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        end
+    end)
+end
+
+-- Sistema de Auto Skills
 local function getCharacter()
     local plr = LocalPlayer
     if plr and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") and plr.Character:FindFirstChild("Humanoid") then
@@ -442,13 +427,13 @@ local function replayMovements()
             humanoid:Move(movement.inputs.moveDirection)
             humanoid.Jump = movement.inputs.jump
             for _, key in pairs(movement.inputs.keysPressed) do
-                game:GetService("VirtualInputManager"):SendKeyEvent(true, key, false, game)
+                VirtualInputManager:SendKeyEvent(true, key, false, game)
                 task.wait(0.01)
-                game:GetService("VirtualInputManager"):SendKeyEvent(false, key, false, game)
+                VirtualInputManager:SendKeyEvent(false, key, false, game)
             end
             local mouseDelta = movement.inputs.mousePos - UserInputService:GetMouseLocation()
             if mouseDelta.Magnitude > 5 then
-                game:GetService("VirtualInputManager"):SendMouseMoveEvent(movement.inputs.mousePos.X, movement.inputs.mousePos.Y, game)
+                VirtualInputManager:SendMouseMoveEvent(movement.inputs.mousePos.X, movement.inputs.mousePos.Y, game)
             end
         end
         Config.Settings.autoSkillsActive = false
@@ -469,103 +454,75 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
--- Carregar configurações salvas
-local function loadSavedConfig()
-    local data = loadData("ghosta_configs.dat")
-    if data then
-        ConfigData = data
-        if Config.Settings.selectedConfig and ConfigData.savedConfigs[Config.Settings.selectedConfig] then
-            Config.Settings = table.clone(ConfigData.savedConfigs[Config.Settings.selectedConfig])
-            print("[Config] Configuração padrão '" .. Config.Settings.selectedConfig .. "' carregada.")
-        end
-    end
-end
-
--- Funções existentes (mantidas, com pequenas otimizações)
+-- Bypass de anticheat universal
 local function advancedAnticheatBypass()
-    setthreadidentity(2)
-    local mt = getrawmetatable(game)
-    setreadonly(mt, false)
+    local success, err = pcall(function()
+        setthreadidentity(2)
+        local mt = getrawmetatable(game)
+        setreadonly(mt, false)
 
-    local oldNamecall
-    oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-        local method = getnamecallmethod()
-        local blockedMethods = {"Kick", "Ban", "Detect", "ReportAbuse"}
-        if table.find(blockedMethods, method) or method:lower():find("detect") then
-            print("[Bypass] Tentativa bloqueada: " .. method)
-            return nil
+        local oldNamecall
+        oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+            local method = getnamecallmethod()
+            local blockedMethods = {"Kick", "Ban", "Detect", "ReportAbuse"}
+            if table.find(blockedMethods, method) or method:lower():find("detect") then
+                print("[Bypass] Tentativa bloqueada: " .. method)
+                return nil
+            end
+            if method == "FireServer" and self.Name:lower():match("detect|exploit|cheat|anti") then
+                print("[Bypass] Remote bloqueado: " .. self.Name)
+                return nil
+            end
+            return oldNamecall(self, ...)
+        end)
+
+        local oldIndex
+        oldIndex = hookmetamethod(game, "__index", function(self, key)
+            if key:lower():match("detect|kill|ban|cheat") then
+                return function(...) return true end
+            end
+            return oldIndex(self, key)
+        end)
+
+        local oldNewIndex = mt.__newindex
+        mt.__newindex = function(t, k, v)
+            if tostring(k):lower():match("velocity|position|cframe") then
+                print("[Bypass] Escrita bloqueada: " .. tostring(k))
+                return
+            end
+            return oldNewIndex(t, k, v)
         end
-        if method == "FireServer" and self.Name:lower():match("detect|exploit|cheat|anti") then
-            print("[Bypass] Remote bloqueado: " .. self.Name)
-            return nil
+        setreadonly(mt, true)
+
+        for _, conn in pairs(getconnections(game:GetService("LogService").MessageOut)) do
+            conn:Disable()
         end
-        return oldNamecall(self, ...)
-    end)
-
-    local oldIndex
-    oldIndex = hookmetamethod(game, "__index", function(self, key)
-        if key:lower():match("detect|kill|ban|cheat") then
-            return function(...) return true end
+        for _, conn in pairs(getconnections(LocalPlayer.Chatted)) do
+            conn:Disable()
         end
-        return oldIndex(self, key)
-    end)
 
-    local oldNewIndex = mt.__newindex
-    mt.__newindex = function(t, k, v)
-        if tostring(k):lower():match("velocity|position|cframe") then
-            print("[Bypass] Escrita bloqueada: " .. tostring(k))
-            return
+        for _, v in pairs(getgc(true)) do
+            if type(v) == "table" and rawget(v, "Detected") then
+                local oldDetect = rawget(v, "Detected")
+                hookfunction(oldDetect, function(action, ...)
+                    if action ~= "_" then return true end
+                    return oldDetect(action, ...)
+                end)
+            end
         end
-        return oldNewIndex(t, k, v)
-    end
-    setreadonly(mt, true)
 
-    for _, conn in pairs(getconnections(game:GetService("LogService").MessageOut)) do
-        conn:Disable()
-    end
-    for _, conn in pairs(getconnections(LocalPlayer.Chatted)) do
-        conn:Disable()
-    end
-
-    for _, v in pairs(getgc(true))лом
-        if type(v) == "table" and rawget(v, "Detected") then
-            local oldDetect = rawget(v, "Detected")
-            hookfunction(oldDetect, function(action, ...)
-                if action ~= "_" then return true end
-                return oldDetect(action, ...)
-            end)
-        end
-    end
-
-    for _, v in pairs(getgc(true)) do
-        if type(v) == "function" and debug.getinfo(v).name:match("IntegrityCheck|AntiCheat") then
-            hookfunction(v, function(...) return true end)
-        end
-    end
-
-    local Rene = Config.Settings.fakeLag
-    RunService.Heartbeat:Connect(function()
-        if math.random() < 0.03 then
-            task.wait(fakeLag)
+        for _, v in pairs(getgc(true)) do
+            if type(v) == "function" and debug.getinfo(v).name and debug.getinfo(v).name:match("IntegrityCheck|AntiCheat") then
+                hookfunction(v, function(...) return true end)
+            end
         end
     end)
-
-    local function spoofPhysics(obj)
-        if obj:IsA("BasePart") then
-            local oldVel = obj.Velocity
-            obj.Velocity = oldVel + Vector3.new(math.random(-0.05, 0.05), math.random(-0.05, 0.05), math.random(-0.05, 0.05))
-            task.wait(0.01)
-            obj.Velocity = oldVel
-        end
+    if not success then
+        warn("[Bypass] Erro ao aplicar bypass: " .. tostring(err))
     end
-
-    RunService.Heartbeat:Connect(function()
-        local ball = detectBall()
-        if ball then spoofPhysics(ball) end
-    end)
 end
 
-local function detectAntcheat()
+local function detectAnticheat()
     local detected = false
     local checks = {
         function() return getrawmetatable(game) ~= nil end,
@@ -593,35 +550,64 @@ local function ghostMode()
             humanoid:Move(randomMove)
         end
     end)
-    local sg = CoreGui:FindFirstChildWhichIsA("ScreenGui")
+    local sg = CoreGui:FindFirstChild("FootballUI")
     if sg then sg.Enabled = false end
     for k, v in pairs(Config.Settings) do
         if k:match("Active$") then Config.Settings[k] = false end
     end
-    saveData("ghosta_settings.dat", Config.Settings)
+    saveData("football_settings.dat", Config.Settings)
+end
+
+-- Aplicar funcionalidades em tempo real
+local function applyFeatures()
+    local fakeLeg, fakeArm
+    RunService.Heartbeat:Connect(function()
+        local character, humanoid = getCharacter()
+        if not character or not humanoid then return end
+        local isR6Char = isR6(character)
+        local legPart = isR6Char and "Right Leg" or "RightLowerLeg"
+        local armPart = isR6Char and "Right Arm" or "RightLowerArm"
+
+        if Config.Settings.reachLeg > 0 then
+            applyReach(character, legPart, Config.Settings.reachLeg)
+        end
+        if Config.Settings.reachArm > 0 then
+            applyReach(character, armPart, Config.Settings.reachArm)
+        end
+
+        if Config.Settings.fakeLegActive and not fakeLeg then
+            fakeLeg = createFakeLimb(character, legPart)
+        elseif not Config.Settings.fakeLegActive and fakeLeg then
+            fakeLeg:Destroy()
+            fakeLeg = nil
+        end
+        if Config.Settings.fakeArmActive and not fakeArm then
+            fakeArm = createFakeLimb(character, armPart)
+        elseif not Config.Settings.fakeArmActive and fakeArm then
+            fakeArm:Destroy()
+            fakeArm = nil
+        end
+    end)
 end
 
 -- Inicialização
 local function init()
-    loadSavedConfig()
+    loadData("football_settings.dat") or Config.Settings
+    loadData("football_skills.dat") or SkillData
     if detectAnticheat() then
         ghostMode()
     else
         advancedAnticheatBypass()
-        local key = requestKey()
-        if key then
-            local ghostaCode = downloadGhosta()
-            if ghostaCode then
-                executeGhosta(ghostaCode)
-            end
-            createUI()
-            recordMovements()
-        else
-            warn("[Loader] Inicialização abortada: key inválida.")
-        end
+        createUI()
+        recordMovements()
+        aimbot()
+        autoGK()
+        applyFeatures()
+        print("[Loader] Script iniciado com sucesso às " .. os.date("%H:%M:%S %d/%m/%Y"))
     end
 end
 
+init()
 init()
 
  Sajie
