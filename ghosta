@@ -1,4 +1,3 @@
--- Ultimate Ghosta Loader + Football Aimbot, Auto-GK, Teleport & Auto Goal (STAN Supreme Edition)
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -6,65 +5,84 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = Workspace.CurrentCamera
 
--- Configurações
-local KEY_MENSAL = "Mensal_1"
-local KEY_LIFETIME = "Key_Lifetime"
-local GHOSTA_URL = "https://raw.githubusercontent.com/LucasRj021/Script-Test/e4140912a56bc36f6c37e7d579a1cba4ce51e0b7/ghosta.lua"
+-- Configurações globais
+local Config = {
+    Keys = {
+        Mensal = "Mensal_1",
+        Lifetime = "Key_Lifetime"
+    },
+    URLs = {
+        Ghosta = "https://raw.githubusercontent.com/LucasRj021/Script-Test/e4140912a56bc36f6c37e7d579a1cba4ce51e0b7/ghosta.lua",
+        ValidationAPI = "https://your-api.com/validate"
+    },
+    Settings = {
+        uiColor = Color3.fromRGB(30, 30, 30),
+        uiAccentColor = Color3.fromRGB(0, 170, 255),
+        reachValue = 100, -- Alcance aumentado
+        uiVisible = true,
+        aimbotActive = false,
+        aimbotMode = "middle",
+        aimbotForce = 70, -- Força ajustada
+        autoGKActive = false,
+        gkSensitivity = 25,
+        teleportActive = false,
+        autoGoalActive = false,
+        espActive = false,
+        fakeLag = 0.02, -- Reduzido para maior realismo
+        reachDynamic = true, -- Alcance dinâmico para mãos e pernas
+        reachHandMultiplier = 1.5, -- Alcance extra para mãos
+        reachLegMultiplier = 1.8 -- Alcance extra para pernas
+    }
+}
 
+-- Persistência de dados
 local KeyData = {
     key = nil,
     activatedAt = nil,
-    duration = 30 * 24 * 60 * 60
+    duration = 30 * 24 * 60 * 60 -- 30 dias em segundos
 }
 
-local Settings = {
-    uiColor = Color3.fromRGB(25, 25, 25),
-    reachValue = 80,
-    uiVisible = true,
-    aimbotActive = false,
-    aimbotMode = "middle",
-    aimbotForce = 60,
-    autoGKActive = false,
-    gkSensitivity = 20,
-    teleportActive = false,
-    autoGoalActive = false
-}
-
--- Persistência de Dados
 local function saveData(file, data)
     if writefile then
-        pcall(function() writefile(file, HttpService:JSONEncode(data)) end)
+        local success, err = pcall(function()
+            writefile(file, HttpService:JSONEncode(data))
+        end)
+        if not success then warn("[Loader] Falha ao salvar dados: " .. tostring(err)) end
     end
 end
 
 local function loadData(file)
     if isfile and readfile then
-        local success, data = pcall(function() return HttpService:JSONDecode(readfile(file)) end)
+        local success, data = pcall(function()
+            return HttpService:JSONDecode(readfile(file))
+        end)
         if success then return data end
     end
     return nil
 end
 
--- Sistema de Keys
+-- Sistema de validação de keys
 local function validateKeyOnline(key)
     local success, response = pcall(function()
-        return HttpService:GetAsync("https://your-api.com/validate?key=" .. HttpService:UrlEncode(key))
+        return HttpService:GetAsync(Config.URLs.ValidationAPI .. "?key=" .. HttpService:UrlEncode(key))
     end)
     if success and response then
         local data = HttpService:JSONDecode(response)
         if data.valid then
             KeyData.key = key
             KeyData.activatedAt = data.activatedAt or os.time()
-            KeyData.duration = data.duration or (30 * 24 * 60 * 60)
+            KeyData.duration = data.duration or Config.KeyData.duration
             saveData("ghosta_key.dat", KeyData)
-            print("[Loader] Key validada online.")
+            print("[Loader] Key validada online com sucesso.")
             return true
         end
     end
-    print("[Loader] Falha na validação online.")
+    warn("[Loader] Falha na validação online da key.")
     return false
 end
 
@@ -81,45 +99,44 @@ local function loadSavedKey()
 end
 
 local function isKeyValid()
-    if KeyData.key == KEY_LIFETIME then return true
-    elseif KeyData.key == KEY_MENSAL then
-        if not KeyData.activatedAt then return false end
+    if KeyData.key == Config.Keys.Lifetime then return true end
+    if KeyData.key == Config.Keys.Mensal and KeyData.activatedAt then
         return (os.time() - KeyData.activatedAt) <= KeyData.duration
     end
     return false
 end
 
 local function activateKey(k)
-    if k == KEY_LIFETIME or k == KEY_MENSAL then
+    if k == Config.Keys.Lifetime or k == Config.Keys.Mensal then
         KeyData.key = k
+        KeyData.activatedAt = os.time()
         saveData("ghosta_key.dat", KeyData)
-        print("[Loader] Key " .. (k == KEY_LIFETIME and "Lifetime" or "Mensal") .. " ativada.")
+        print("[Loader] Key " .. (k == Config.Keys.Lifetime and "Lifetime" or "Mensal") .. " ativada.")
         return true
-    else
-        print("[Loader] Key inválida!")
-        return false
     end
+    warn("[Loader] Key inválida!")
+    return false
 end
 
 local function requestKey()
     if loadSavedKey() then return KeyData.key end
     print("[Loader] Insira sua Key:")
-    local inputKey = io.read()
+    local inputKey = io.read() or ""
     if validateKeyOnline(inputKey) or activateKey(inputKey) then
         return inputKey
     end
     return nil
 end
 
--- Download Ghosta
+-- Download do script Ghosta
 local function downloadGhosta()
-    for i = 1, 5 do -- Aumentado para 5 tentativas
+    for i = 1, 5 do
         local success, response = pcall(function()
-            return HttpService:GetAsync(GHOSTA_URL)
+            return HttpService:GetAsync(Config.URLs.Ghosta)
         end)
         if success and response then return response end
         warn("[Loader] Tentativa " .. i .. " falhou. Retentando...")
-        wait(1)
+        task.wait(1)
     end
     warn("[Loader] Falha ao baixar ghosta.lua após 5 tentativas!")
     return nil
@@ -136,10 +153,11 @@ local function executeGhosta(code)
         warn("[Loader] Erro ao executar ghosta.lua: " .. tostring(err2))
         return false
     end
+    print("[Loader] Ghosta executado com sucesso.")
     return true
 end
 
--- Bypass Anti-Cheat Supremo
+-- Bypass de anticheat avançado
 local function advancedAnticheatBypass()
     setthreadidentity(2)
     local mt = getrawmetatable(game)
@@ -149,12 +167,13 @@ local function advancedAnticheatBypass()
     local oldNamecall
     oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
-        if method == "Kick" or method == "Ban" or method:lower():find("detect") then
-            print("[Bypass] Tentativa bloqueada:", method, ...)
+        local blockedMethods = {"Kick", "Ban", "Detect", "ReportAbuse"}
+        if table.find(blockedMethods, method) or method:lower():find("detect") then
+            print("[Bypass] Tentativa bloqueada: " .. method)
             return nil
         end
-        if method == "FireServer" and (self.Name:lower():find("detect") or self.Name:lower():find("exploit") or self.Name:lower():find("cheat")) then
-            print("[Bypass] Remote bloqueado:", self.Name)
+        if method == "FireServer" and self.Name:lower():match("detect|exploit|cheat|anti") then
+            print("[Bypass] Remote bloqueado: " .. self.Name)
             return nil
         end
         return oldNamecall(self, ...)
@@ -163,7 +182,7 @@ local function advancedAnticheatBypass()
     -- Hook __index
     local oldIndex
     oldIndex = hookmetamethod(game, "__index", function(self, key)
-        if key:lower():find("detect") or key == "Kill" or key == "Ban" or key:lower():find("cheat") then
+        if key:lower():match("detect|kill|ban|cheat") then
             return function(...) return true end
         end
         return oldIndex(self, key)
@@ -172,15 +191,15 @@ local function advancedAnticheatBypass()
     -- Hook __newindex
     local oldNewIndex = mt.__newindex
     mt.__newindex = function(t, k, v)
-        if tostring(k):lower():find("velocity") or tostring(k):lower():find("position") or tostring(k):lower():find("cframe") then
-            print("[Bypass] Escrita bloqueada:", k)
+        if tostring(k):lower():match("velocity|position|cframe") then
+            print("[Bypass] Escrita bloqueada: " .. tostring(k))
             return
         end
         return oldNewIndex(t, k, v)
     end
     setreadonly(mt, true)
 
-    -- Bloquear RemoteSpy e logs
+    -- Desativar RemoteSpy e logs
     for _, conn in pairs(getconnections(game:GetService("LogService").MessageOut)) do
         conn:Disable()
     end
@@ -192,25 +211,25 @@ local function advancedAnticheatBypass()
     for _, v in pairs(getgc(true)) do
         if type(v) == "table" and rawget(v, "Detected") then
             local oldDetect = rawget(v, "Detected")
-            hookfunction(oldDetect, function(action, info, ...)
+            hookfunction(oldDetect, function(action, ...)
                 if action ~= "_" then return true end
-                return oldDetect(action, info, ...)
+                return oldDetect(action, ...)
             end)
         end
     end
 
-    -- Bypass Hyperion
+    -- Bypass Hyperion e outros
     for _, v in pairs(getgc(true)) do
-        if type(v) == "function" and debug.getinfo(v).name == "IntegrityCheck" then
+        if type(v) == "function" and debug.getinfo(v).name:match("IntegrityCheck|AntiCheat") then
             hookfunction(v, function(...) return true end)
         end
     end
 
-    -- Fake lag e comportamento humano
-    local fakeLag = 0.03
+    -- Simulação de comportamento humano
+    local fakeLag = Config.Settings.fakeLag
     RunService.Heartbeat:Connect(function()
-        if math.random() < 0.05 then
-            wait(fakeLag)
+        if math.random() < 0.03 then
+            task.wait(fakeLag)
         end
     end)
 
@@ -218,59 +237,56 @@ local function advancedAnticheatBypass()
     local function spoofPhysics(obj)
         if obj:IsA("BasePart") then
             local oldVel = obj.Velocity
-            obj.Velocity = oldVel + Vector3.new(math.random(-0.1, 0.1), 0, math.random(-0.1, 0.1))
+            obj.Velocity = oldVel + Vector3.new(math.random(-0.05, 0.05), math.random(-0.05, 0.05), math.random(-0.05, 0.05))
             task.wait(0.01)
             obj.Velocity = oldVel
         end
     end
 
-    -- Monitorar objetos manipulados
-    RunService.Heartbeat:Connectde(function()
+    RunService.Heartbeat:Connect(function()
         local ball = detectBall()
-        if ball then
-            spoofPhysics(ball)
-        end
+        if ball then spoofPhysics(ball) end
     end)
 end
 
 local function detectAnticheat()
     local detected = false
-    pcall(function()
-        local mt = getrawmetatable(game)
-        if mt then
-            local oldNamecall = mt.__namecall
-            setreadonly(mt, false)
-            mt.__namecall = function(...) return oldNamecall(...) end
-            setreadonly(mt, true)
-            detected = true
-        end
-    end)
+    local checks = {
+        function() return getrawmetatable(game) ~= nil end,
+        function() return #getconnections(game:GetService("LogService").MessageOut) > 0 end,
+        function() return #getconnections(LocalPlayer.Chatted) > 0 end
+    }
+    for _, check in ipairs(checks) do
+        local success, result = pcall(check)
+        if success and result then detected = true break end
+    end
     return detected
 end
 
+-- Modo Ghosta (camuflagem)
 local function ghostMode()
-    warn("[Ghosta] Anticheat detectado! Ativando camuflagem.")
+    warn("[Ghosta] Anticheat detectado! Ativando camuflagem avançada.")
     local char, humanoid = getCharacter()
     if humanoid then
         humanoid.WalkSpeed = 16
         humanoid.JumpPower = 50
+        humanoid.HipHeight = 2
     end
     RunService.Heartbeat:Connect(function()
         if char and humanoid then
-            local randomMove = Vector3.new(math.random(-1, 1), 0, math.random(-1, 1))
+            local randomMove = Vector3.new(math.random(-0.5, 0.5), 0, math.random(-0.5, 0.5))
             humanoid:Move(randomMove)
         end
     end)
     local sg = CoreGui:FindFirstChildWhichIsA("ScreenGui")
     if sg then sg.Enabled = false end
-    Settings.aimbotActive = false
-    Settings.autoGKActive = false
-    Settings.teleportActive = false
-    Settings.autoGoalActive = false
-    saveData("ghosta_settings.dat", Settings)
+    for k, v in pairs(Config.Settings) do
+        if k:match("Active$") then Config.Settings[k] = false end
+    end
+    saveData("ghosta_settings.dat", Config.Settings)
 end
 
--- Funções do Ghosta
+-- Funções principais
 local function getCharacter()
     local plr = LocalPlayer
     if not plr or not plr.Character then return nil end
@@ -293,16 +309,16 @@ local function detectBall()
     local ballNames = {"ball", "soccer", "futsal", "football", "gameball", "futsalball", "soccerball"}
     local goals = {}
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and (obj.Name:lower():find("goal") or obj.Name:lower():find("net")) then
+        if obj:IsA("BasePart") and obj.Name:lower():match("goal|net") then
             table.insert(goals, obj)
         end
     end
     for _, obj in pairs(Workspace:GetDescendants()) do
         if obj:IsA("BasePart") and obj.Massless and obj.CanCollide then
             for _, name in ipairs(ballNames) do
-                if obj.Name:lower():find(name) then
+                if obj.Name:lower():match(name) then
                     for _, goal in ipairs(goals) do
-                        if (obj.Position - goal.Position).Magnitude < 100 then
+                        if (obj.Position - goal.Position).Magnitude < 120 then
                             return obj
                         end
                     end
@@ -316,10 +332,29 @@ end
 local function applyReach(amount)
     local c, humanoid = getCharacter()
     if not c then return end
+    local charType = getCharacterType(c)
     local ball = detectBall()
     if not ball then return end
     local dist = (ball.Position - c.HumanoidRootPart.Position).Magnitude
     if dist < amount then
+        local limbs = charType == "R15" and {"RightHand", "LeftHand", "RightLowerLeg", "LeftLowerLeg"} or {"Right Arm", "Left Arm", "Right Leg", "Left Leg"}
+        for _, limbName in ipairs(limbs) do
+            local limb = c:FindFirstChild(limbName)
+            if limb then
+                local multiplier = limbName:match("Hand|Arm") and Config.Settings.reachHandMultiplier or Config.Settings.reachLegMultiplier
+                local reachDist = amount * multiplier
+                local direction = (ball.Position - limb.Position).Unit
+                local tween = TweenService:Create(limb, TweenInfo.new(0.05, Enum.EasingStyle.Linear), {
+                    CFrame = CFrame.new(limb.Position + direction * math.min(reachDist, dist))
+                })
+                tween:Play()
+                task.spawn(function()
+                    task.wait(0.05)
+                    tween:Cancel()
+                    limb.CFrame = limb.CFrame -- Restaurar posição
+                end)
+            end
+        end
         local bodyVelocity = Instance.new("BodyVelocity")
         bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
         bodyVelocity.Velocity = (ball.Position - c.HumanoidRootPart.Position).Unit * 50
@@ -331,23 +366,19 @@ end
 local function createFake(what)
     local c = getCharacter()
     if not c then return end
-    local limbs = {}
-    if what == "arms" then
-        limbs = {"RightHand", "LeftHand", "Right Arm", "Left Arm"}
-    elseif what == "legs" then
-        limbs = {"RightFoot", "LeftFoot", "Right Leg", "Left Leg", "RightLowerLeg", "LeftLowerLeg"}
-    end
-    for _, limbName in pairs(limbs) do
+    local limbs = what == "arms" and {"RightHand", "LeftHand", "Right Arm", "Left Arm"} or {"RightFoot", "LeftFoot", "Right Leg", "Left Leg", "RightLowerLeg", "LeftLowerLeg"}
+    for _, limbName in ipairs(limbs) do
         local limb = c:FindFirstChild(limbName)
         if limb and limb:IsA("BasePart") then
             local fake = Instance.new("Part")
             fake.Name = "Fake" .. HttpService:GenerateGUID(false)
             fake.Size = limb.Size
-            fake.Position = limb.Position + Vector3.new(math.random(-0.5, 0.5), 3, math.random(-0.5, 0.5))
+            fake.Position = limb.Position + Vector3.new(math.random(-0.3, 0.3), math.random(2, 4), math.random(-0.3, 0.3))
             fake.Transparency = 1
             fake.Anchored = true
             fake.CanCollide = false
             fake.Parent = c
+            game:GetService("Debris"):AddItem(fake, 0.1)
         end
     end
 end
@@ -356,12 +387,12 @@ local function getGoalPosition(mode)
     local goals = {}
     local enemyGK = nil
     for _, obj in pairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and (obj.Name:lower():find("goal") or obj.Name:lower():find("net")) then
+        if obj:IsA("BasePart") and obj.Name:lower():match("goal|net") then
             table.insert(goals, obj)
         end
     end
     for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChildOfClass("Tool") and player.Character:FindFirstChildOfClass("Tool").Name:lower():find("gk") then
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChildOfClass("Tool") and player.Character:FindFirstChildOfClass("Tool").Name:lower():match("gk") then
             enemyGK = player.Character.HumanoidRootPart
         end
     end
@@ -392,24 +423,24 @@ local function getGoalPosition(mode)
 end
 
 local function aimbot()
-    if not Settings.aimbotActive then return end
+    if not Config.Settings.aimbotActive then return end
     task.spawn(function()
         local lastUpdate = tick()
-        while Settings.aimbotActive do
-            if tick() - lastUpdate < 0.03 then
+        while Config.Settings.aimbotActive do
+            if tick() - lastUpdate < 0.02 then
                 task.wait()
                 continue
             end
             local ball = detectBall()
             if not ball then task.wait(0.05) continue end
-            local goalPos = getGoalPosition(Settings.aimbotMode)
+            local goalPos = getGoalPosition(Config.Settings.aimbotMode)
             if not goalPos then task.wait(0.05) continue end
             local c, humanoid = getCharacter()
             if not c or not humanoid then task.wait(0.05) continue end
 
             local ray = Ray.new(ball.Position, (goalPos - ball.Position).Unit * 1000)
             local hit, pos = Workspace:FindPartOnRayWithIgnoreList(ray, {c, ball})
-            if hit and not hit.Name:lower():find("goal") then
+            if hit and not hit.Name:lower():match("goal") then
                 task.wait(0.05)
                 continue
             end
@@ -417,29 +448,29 @@ local function aimbot()
             local direction = (goalPos - ball.Position).Unit
             local bodyVelocity = Instance.new("BodyVelocity")
             bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            bodyVelocity.Velocity = direction * (Settings.aimbotForce or 60)
+            bodyVelocity.Velocity = direction * Config.Settings.aimbotForce
             bodyVelocity.Parent = ball
-            game:GetService("Debris"):AddItem(bodyVelocity, 0.03)
+            game:GetService("Debris"):AddItem(bodyVelocity, 0.02)
             lastUpdate = tick()
-            task.wait(0.03)
+            task.wait(0.02)
         end
     end)
 end
 
 local function autoGK()
-    if not Settings.autoGKActive then return end
+    if not Config.Settings.autoGKActive then return end
     task.spawn(function()
         local lastUpdate = tick()
         local lastPos, lastVel
-        while Settings.autoGKActive do
-            if tick() - lastUpdate < 0.03 then
+        while Config.Settings.autoGKActive do
+            if tick() - lastUpdate < 0.02 then
                 task.wait()
                 continue
             end
             local c, humanoid = getCharacter()
             if not c or not humanoid then task.wait(0.05) continue end
             local tool = c:FindFirstChildOfClass("Tool")
-            if not tool or not tool.Name:lower():find("gk") then task.wait(0.05) continue end
+            if not tool or not tool.Name:lower():match("gk") then task.wait(0.05) continue end
 
             local ball = detectBall()
             if not ball then task.wait(0.05) continue end
@@ -449,117 +480,49 @@ local function autoGK()
             if lastPos and lastVel then
                 local delta = tick() - lastUpdate
                 local accel = (ballVel - lastVel) / delta
-                local predictedPos = ballPos + ballVel * 0.08 + 0.5 * accel * (0.08 ^ 2)
+                local predictedPos = ballPos + ballVel * 0.06 + 0.5 * accel * (0.06 ^ 2)
                 local charPos = c.HumanoidRootPart.Position
                 local dist = (predictedPos - charPos).Magnitude
-                if dist < (Settings.gkSensitivity or 20) then
+                if dist < Config.Settings.gkSensitivity then
                     humanoid.Jump = true
                     local moveDir = (predictedPos - charPos).Unit
-                    local tween = TweenService:Create(c.HumanoidRootPart, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {CFrame = CFrame.new(charPos + moveDir * math.min(16 * delta, dist))})
+                    local tween = TweenService:Create(c.HumanoidRootPart, TweenInfo.new(0.08, Enum.EasingStyle.Linear), {
+                        CFrame = CFrame.new(charPos + moveDir * math.min(16 * delta, dist))
+                    })
                     tween:Play()
                 end
             end
             lastPos = ballPos
             lastVel = ballVel
             lastUpdate = tick()
-            task.wait(0.03)
+            task.wait(0.02)
         end
     end)
 end
 
 local function teleportBall()
-    if not Settings.teleportActive then return end
+    if not Config.Settings.teleportActive then return end
     task.spawn(function()
         local c, humanoid = getCharacter()
         if not c or not humanoid then return end
         local ball = detectBall()
         if not ball then return end
         local charPos = c.HumanoidRootPart.Position
-        local tween = TweenService:Create(ball, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {CFrame = CFrame.new(charPos + Vector3.new(2, 0, 0))})
+        local tween = TweenService:Create(ball, TweenInfo.new(0.08, Enum.EasingStyle.Linear), {
+            CFrame = CFrame.new(charPos + Vector3.new(2, 0, 0))
+        })
         tween:Play()
     end)
 end
 
 local function autoGoal()
-    if not Settings.autoGoalActive then return end
+    if not Config.Settings.autoGoalActive then return end
     task.spawn(function()
         local lastUpdate = tick()
-        while Settings.autoGoalActive do
-            if tick() - lastUpdate < 0.1 then
+        while Config.Settings.autoGoalActive do
+            if tick() - lastUpdate < 0.08 then
                 task.wait()
                 continue
             end
             local c, humanoid = getCharacter()
-            if not c or not humanoid then task.wait(0.05) continue end
-            local ball = detectBall()
-            if not ball then task.wait(0.05) continue end
-            local goalPos = getGoalPosition(Settings.aimbotMode)
-            if not goalPos then task.wait(0.05) continue end
-
-            -- Teleportar pra bola
-            local charPos = c.HumanoidRootPart.Position
-            local ballPos = ball.Position
-            local dist = (ballPos - charPos).Magnitude
-            if dist > 2 then
-                local tween = TweenService:Create(c.HumanoidRootPart, TweenInfo.new(0.1, Enum.EasingStyle.Linear), {CFrame = CFrame.new(ballPos + Vector3.new(2, 0, 0))})
-                tween:Play()
-                task.wait(0.1)
-            end
-
-            -- Chutar pro gol
-            local direction = (goalPos - ball.Position).Unit
-            local bodyVelocity = Instance.new("BodyVelocity")
-            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-            bodyVelocity.Velocity = direction * (Settings.aimbotForce or 60)
-            bodyVelocity.Parent = ball
-            game:GetService("Debris"):AddItem(bodyVelocity, 0.03)
-            lastUpdate = tick()
-            task.wait(0.1)
-        end
-    end)
-end
-
-local function esp()
-    local function highlight(obj, color)
-        local highlight = Instance.new("Highlight")
-        highlight.FillColor = color
-        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-        highlight.FillTransparency = 0.5
-        highlight.OutlineTransparency = 0
-        highlight.Parent = obj
-    end
-
-    local ball = detectBall()
-    if ball then highlight(ball, Color3.fromRGB(0, 255, 0)) end
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            highlight(player.Character, Color3.fromRGB(255, 0, 0))
-        end
-    end
-    Players.PlayerAdded:Connect(function(player)
-        player.CharacterAdded:Connect(function(char)
-            if player ~= LocalPlayer then
-                highlight(char, Color3.fromRGB(255, 0, 0))
-            end
-        end)
-    end)
-end
-
--- UI Personalizável
-local function createUI()
-    local sg = Instance.new("ScreenGui")
-    sg.Name = HttpService:GenerateGUID(false)
-    sg.ResetOnSpawn = false
-    sg.Parent = CoreGui
-    sg.Enabled = Settings.uiVisible
-
-    local frame = Instance.new("Frame", sg)
-    frame.Size = UDim2.new(0, 350, 0, 400)
-    frame.Position = UDim2.new(0.5, -175, 0.5, -200)
-    frame.BackgroundColor3 = Settings.uiColor
-    frame.BorderSizePixel = 0
-    local uicorner = Instance.new("UICorner", frame)
-    uicorner.CornerRadius = UDim.new(0, 12)
-
-    -- Animação de ab
+            if not c or not humanoid then task.wait(0.05
