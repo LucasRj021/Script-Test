@@ -1,147 +1,353 @@
--- ghosta.lua completamente ofuscado
--- NÃO EDITE — linkado diretamente via loader remoto
+--[[
+Script Completo Loader + Ghosta
+Keys:
+- Mensal_1 (30 dias)
+- Key_Lifetime (vitalícia)
+]]
 
--- Obfuscador utilitário
-local e,s,o,r,a,c,d,l,u = string.byte,string.char,{},setmetatable,{},table.insert,{},getfenv,setfenv,getfenv
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local CoreGui = game:GetService("CoreGui")
 
--- Fragmentador
-local function ƒ(f)return function(...)return f(...)end end
+local LocalPlayer = Players.LocalPlayer
 
--- Encoder de string
-local function 𝔼(str)local out=""for i=1,#str do out=out.."\\"..e(str,i)end;return out end
+-- Configurações
+local KEY_MENSAL = "Mensal_1"
+local KEY_LIFETIME = "Key_Lifetime"
+local GHOSTA_URL = "https://raw.githubusercontent.com/LucasRj021/Script-Test/e4140912a56bc36f6c37e7d579a1cba4ce51e0b7/ghosta.lua"
 
--- Decoder
-local function 𝕌(encoded)local t={}for byte in encoded:gmatch("\\(%d+)")do r=#t+1;t[r]=s(tonumber(byte))end;return table.concat(t)end
-
--- Variável dinâmica
-local function 𝓋(name,val)_ENV[name]=val end
-
--- Encode de serviços
-local function 𝕊(v)local out=""for i=1,#v do local c=e(v,i)c=c~13;out=out.."\\"..c end;return out end
-local function 𝕊𝕕(v)local out=""for b in v:gmatch("\\(%d+)")do out=out..s(tonumber(b)~13)end;return out end
-
--- Encode de serviços conhecidos
-local 𝕟 = {
-𝕊("game"),𝕊("Players"),𝕊("RunService"),𝕊("HttpService"),𝕊("CoreGui"),𝕊("LocalPlayer"),
-𝕊("GetService"),𝕊("Instance"),𝕊("new"),𝕊("pcall"),𝕊("hookmetamethod"),
-𝕊("__namecall"),𝕊("__index"),𝕊("wait"),𝕊("task"),𝕊("loadstring")
+local KeyData = {
+    key = nil,
+    activatedAt = nil,
+    duration = 30 * 24 * 60 * 60 -- 30 dias em segundos
 }
 
--- Obter serviços dinamicamente
-local function 𝕘(name)local n=𝕊𝕕(name)return game:GetService(n)end
-
--- Detectar anticheat (básico)
-local detectAC = false
-pcall(function()
-	r.__metatable="locked"
-	local f = ƒ(function(...)end)
-	local hook = hookmetamethod or nil
-	if hook then
-		local mt = getrawmetatable(game)
-		if mt then
-			local old = mt.__namecall
-			setreadonly(mt,false)
-			mt.__namecall = function(...) return old(...) end
-			setreadonly(mt,true)
-			detectAC = true
-		end
-	end
-end)
-
--- Ativar camuflagem fantasma se detectar AC
-if detectAC then
-	warn("🛡️ Anticheat detectado. Ativando Ghost Mode.")
-	while true do task.wait(9e9) end
+-- Salva ativação local (em memória apenas, persista como quiser)
+local function saveActivation(time)
+    KeyData.activatedAt = time or os.time()
 end
 
--- Função para checar personagem
-local function 𝒸𝒽𝓀𝒑()
-	local p=𝕘(𝕟[2]).LocalPlayer
-	if not p or not p.Character then return nil end
-	local c=p.Character
-	if c:FindFirstChild("Humanoid") then
-		return c
-	end
-	return nil
+local function isKeyValid()
+    if KeyData.key == KEY_LIFETIME then
+        return true
+    elseif KeyData.key == KEY_MENSAL then
+        if not KeyData.activatedAt then return false end
+        local elapsed = os.time() - KeyData.activatedAt
+        return elapsed <= KeyData.duration
+    else
+        return false
+    end
 end
 
--- Criação de membros falsos
-local function 𝓯𝓪𝓴𝓮(what)
-	local c=𝒸𝒽𝓀𝒑()if not c then return end
-	local limbs={"RightHand","LeftHand","RightFoot","LeftFoot"}
-	for _,limb in pairs(limbs) do
-		if what=="arms" and limb:find("Hand") or what=="legs" and limb:find("Foot") then
-			local l=c:FindFirstChild(limb)
-			if l then
-				local fake=Instance.new("Part",c)
-				fake.Name="Fake"..limb
-				fake.Size=l.Size
-				fake.Position=l.Position+Vector3.new(0,3,0)
-				fake.Transparency=1
-				fake.CanCollide=false
-				fake.Anchored=true
-			end
-		end
-	end
+local function activateKey(k)
+    if k == KEY_LIFETIME then
+        KeyData.key = k
+        saveActivation(os.time())
+        print("[Loader] Key Lifetime ativada.")
+        return true
+    elseif k == KEY_MENSAL then
+        KeyData.key = k
+        saveActivation(os.time())
+        print("[Loader] Key Mensal ativada por 30 dias.")
+        return true
+    else
+        print("[Loader] Key inválida!")
+        return false
+    end
 end
 
--- Sistema Reach universal
-local function 𝓻𝓮𝓪𝓬𝓱(amount,what)
-	local c=𝒸𝒽𝓀𝒑()if not c then return end
-	local limbs={"RightHand","LeftHand","RightFoot","LeftFoot"}
-	for _,limb in pairs(limbs) do
-		if what=="arms" and limb:find("Hand") or what=="legs" and limb:find("Foot") then
-			local l=c:FindFirstChild(limb)
-			if l then
-				l.Size=Vector3.new(amount/25,l.Size.Y,l.Size.Z)
-			end
-		end
-	end
+local function requestKey()
+    print("[Loader] Insira sua Key:")
+    local inputKey = io.read()
+    return inputKey
 end
 
--- Criar UI oculta
-local function 𝓾𝓲()
-	local sg=Instance.new("ScreenGui",𝕘(𝕟[5]))
-	sg.Name="𝔊𝔥𝔬𝔰𝔱𝔞"
-	sg.ResetOnSpawn=false
-	sg.Enabled=false
-
-	local frame=Instance.new("Frame",sg)
-	frame.Size=UDim2.new(0,300,0,220)
-	frame.Position=UDim2.new(0.5,-150,0.5,-110)
-	frame.BackgroundColor3=Color3.fromRGB(20,20,20)
-	frame.BorderSizePixel=0
-
-	local tabs={"Reach","Fake","Kill"}
-	local funcs={function()
-		𝓻𝓮𝓪𝓬𝓱(80,"arms")
-		𝓻𝓮𝓪𝓬𝓱(80,"legs")
-	end,function()
-		𝓯𝓪𝓴𝓮("arms")
-		𝓯𝓪𝓴𝓮("legs")
-	end,function()
-		sg.Enabled=false
-	end}
-
-	for i,tab in pairs(tabs)do
-		local btn=Instance.new("TextButton",frame)
-		btn.Size=UDim2.new(0,90,0,40)
-		btn.Position=UDim2.new(0,(i-1)*100,0,10)
-		btn.Text=tab
-		btn.BackgroundColor3=Color3.fromRGB(40,40,40)
-		btn.TextColor3=Color3.new(1,1,1)
-		btn.MouseButton1Click:Connect(funcs[i])
-	end
-
-	local open=Instance.new("TextButton",𝕘(𝕟[5]))
-	open.Size=UDim2.new(0,100,0,40)
-	open.Position=UDim2.new(0,10,1,-60)
-	open.Text="Abrir UI"
-	open.BackgroundColor3=Color3.new(0.2,0.2,0.2)
-	open.TextColor3=Color3.new(1,1,1)
-	open.MouseButton1Click:Connect(function()
-		sg.Enabled=true
-	end)
+local function downloadGhosta()
+    local success, response = pcall(function()
+        return HttpService:GetAsync(GHOSTA_URL)
+    end)
+    if success and response then
+        return response
+    else
+        warn("[Loader] Falha ao baixar ghosta.lua!")
+        return nil
+    end
 end
 
-𝓾𝓲()
+local function executeGhosta(code)
+    local f, err = loadstring(code)
+    if not f then
+        warn("[Loader] Erro no loadstring do ghosta.lua: "..tostring(err))
+        return false
+    end
+    local success, err2 = pcall(f)
+    if not success then
+        warn("[Loader] Erro ao executar ghosta.lua: "..tostring(err2))
+        return false
+    end
+    return true
+end
+
+local function detectAnticheat()
+    local detected = false
+    pcall(function()
+        local mt = getrawmetatable(game)
+        if mt then
+            local oldNamecall = mt.__namecall
+            setreadonly(mt,false)
+            mt.__namecall = function(...) return oldNamecall(...) end
+            setreadonly(mt,true)
+            detected = true
+        end
+    end)
+    return detected
+end
+
+local function ghostMode()
+    warn("[Ghosta] Anticheat detectado! Ativando camuflagem e pausando script.")
+    while true do
+        task.wait(1e10)
+    end
+end
+
+-- Código interno ghosta (UI e funções)
+local function ghostaInternal()
+    local Players = game:GetService("Players")
+    local RunService = game:GetService("RunService")
+    local CoreGui = game:GetService("CoreGui")
+    local LocalPlayer = Players.LocalPlayer
+
+    local function getCharacter()
+        local plr = LocalPlayer
+        if not plr then return nil end
+        if not plr.Character then return nil end
+        local c = plr.Character
+        local humanoid = c:FindFirstChildOfClass("Humanoid")
+        if not humanoid then return nil end
+        return c, humanoid
+    end
+
+    local function getCharacterType(c)
+        if c:FindFirstChild("RightHand") and c:FindFirstChild("LeftHand") and c:FindFirstChild("RightLowerLeg") then
+            return "R15"
+        elseif c:FindFirstChild("Right Arm") and c:FindFirstChild("Left Arm") then
+            return "R6"
+        else
+            return "Unknown"
+        end
+    end
+
+    local function applyReach(amount)
+        local c = getCharacter()
+        if not c then return end
+        local ctype = getCharacterType(c)
+        local limbs = {}
+
+        if ctype == "R15" then
+            limbs = {"RightHand", "LeftHand", "RightLowerLeg", "LeftLowerLeg"}
+        elseif ctype == "R6" then
+            limbs = {"Right Arm", "Left Arm", "Right Leg", "Left Leg"}
+        else
+            limbs = {"RightHand", "LeftHand", "RightLowerLeg", "LeftLowerLeg", "Right Arm", "Left Arm", "Right Leg", "Left Leg"}
+        end
+
+        for _, limbName in pairs(limbs) do
+            local limb = c:FindFirstChild(limbName)
+            if limb and limb:IsA("BasePart") then
+                limb.Size = Vector3.new(amount / 25, limb.Size.Y, limb.Size.Z)
+            end
+        end
+    end
+
+    local function createFake(what)
+        local c = getCharacter()
+        if not c then return end
+        local limbs = {}
+        if what == "arms" then
+            limbs = {"RightHand", "LeftHand", "Right Arm", "Left Arm"}
+        elseif what == "legs" then
+            limbs = {"RightFoot", "LeftFoot", "Right Leg", "Left Leg", "RightLowerLeg", "LeftLowerLeg"}
+        end
+        for _, limbName in pairs(limbs) do
+            local limb = c:FindFirstChild(limbName)
+            if limb and limb:IsA("BasePart") then
+                local fake = Instance.new("Part")
+                fake.Name = "Fake" .. limbName
+                fake.Size = limb.Size
+                fake.Position = limb.Position + Vector3.new(0, 3, 0)
+                fake.Transparency = 1
+                fake.Anchored = true
+                fake.CanCollide = false
+                fake.Parent = c
+            end
+        end
+    end
+
+    local function createUI()
+        local sg = Instance.new("ScreenGui")
+        sg.Name = "Ghosta"
+        sg.ResetOnSpawn = false
+        sg.Parent = CoreGui
+        sg.Enabled = true
+
+        local frame = Instance.new("Frame", sg)
+        frame.Size = UDim2.new(0, 320, 0, 240)
+        frame.Position = UDim2.new(0.5, -160, 0.5, -120)
+        frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+        frame.BorderSizePixel = 0
+
+        local tabs = {"Reach", "Fake", "Kill"}
+        local buttons = {}
+
+        local function clearChildren(parent)
+            for _,child in pairs(parent:GetChildren()) do
+                if child:IsA("GuiObject") and child.Name ~= "TabButtons" then
+                    child:Destroy()
+                end
+            end
+        end
+
+        local contentFrame = Instance.new("Frame", frame)
+        contentFrame.Size = UDim2.new(1, -20, 1, -60)
+        contentFrame.Position = UDim2.new(0, 10, 0, 50)
+        contentFrame.BackgroundTransparency = 1
+
+        CoreGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false) -- Stream Mode ON
+
+        local function tabReach()
+            clearChildren(contentFrame)
+            local label = Instance.new("TextLabel", contentFrame)
+            label.Text = "Reach (0-100):"
+            label.Size = UDim2.new(1,0,0,30)
+            label.TextColor3 = Color3.new(1,1,1)
+            label.BackgroundTransparency = 1
+
+            local slider = Instance.new("TextBox", contentFrame)
+            slider.Size = UDim2.new(1,0,0,30)
+            slider.Position = UDim2.new(0,0,0,40)
+            slider.Text = "80"
+            slider.TextColor3 = Color3.new(1,1,1)
+            slider.BackgroundColor3 = Color3.fromRGB(50,50,50)
+            slider.ClearTextOnFocus = false
+
+            local applyBtn = Instance.new("TextButton", contentFrame)
+            applyBtn.Size = UDim2.new(1,0,0,30)
+            applyBtn.Position = UDim2.new(0,0,0,80)
+            applyBtn.Text = "Aplicar Reach"
+            applyBtn.BackgroundColor3 = Color3.fromRGB(100,100,100)
+            applyBtn.TextColor3 = Color3.new(1,1,1)
+
+            applyBtn.MouseButton1Click:Connect(function()
+                local val = tonumber(slider.Text) or 80
+                if val < 0 then val = 0 end
+                if val > 100 then val = 100 end
+                applyReach(val)
+            end)
+        end
+
+        local function tabFake()
+            clearChildren(contentFrame)
+            local armsBtn = Instance.new("TextButton", contentFrame)
+            armsBtn.Size = UDim2.new(1,0,0,40)
+            armsBtn.Text = "Fake Arms"
+            armsBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+            armsBtn.TextColor3 = Color3.new(1,1,1)
+            armsBtn.MouseButton1Click:Connect(function()
+                createFake("arms")
+            end)
+
+            local legsBtn = Instance.new("TextButton", contentFrame)
+            legsBtn.Size = UDim2.new(1,0,0,40)
+            legsBtn.Position = UDim2.new(0,0,0,50)
+            legsBtn.Text = "Fake Legs"
+            legsBtn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+            legsBtn.TextColor3 = Color3.new(1,1,1)
+            legsBtn.MouseButton1Click:Connect(function()
+                createFake("legs")
+            end)
+        end
+
+        local function tabKill()
+            clearChildren(contentFrame)
+            local streamLabel = Instance.new("TextLabel", contentFrame)
+            streamLabel.Text = "Stream Mode: ON"
+            streamLabel.Size = UDim2.new(1,0,0,30)
+            streamLabel.TextColor3 = Color3.new(0,1,0)
+            streamLabel.BackgroundTransparency = 1
+
+            local closeBtn = Instance.new("TextButton", contentFrame)
+            closeBtn.Size = UDim2.new(1,0,0,40)
+            closeBtn.Position = UDim2.new(0,0,0,50)
+            closeBtn.Text = "Fechar UI"
+            closeBtn.BackgroundColor3 = Color3.fromRGB(120,20,20)
+            closeBtn.TextColor3 = Color3.new(1,1,1)
+            closeBtn.MouseButton1Click:Connect(function()
+                sg.Enabled = false
+            end)
+        end
+
+        local btnFrame = Instance.new("Frame", frame)
+        btnFrame.Name = "TabButtons"
+        btnFrame.Size = UDim2.new(1,0,0,40)
+        btnFrame.BackgroundTransparency = 1
+
+        for i, name in ipairs(tabs) do
+            local btn = Instance.new("TextButton", btnFrame)
+            btn.Size = UDim2.new(1/#tabs, -5, 1, 0)
+            btn.Position = UDim2.new((i-1)/#tabs, 5*(i-1), 0, 0)
+            btn.Text = name
+            btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            btn.TextColor3 = Color3.new(1,1,1)
+            btn.MouseButton1Click:Connect(function()
+                if name == "Reach" then tabReach()
+                elseif name == "Fake" then tabFake()
+                elseif name == "Kill" then tabKill()
+                end
+            end)
+            table.insert(buttons, btn)
+        end
+
+        tabReach()
+    end
+
+    createUI()
+end
+
+-- Main
+local function main()
+    print("[Loader] Verificando key...")
+    local keyInput = requestKey()
+    if not activateKey(keyInput) then
+        print("[Loader] Key inválida, encerrando script.")
+        return
+    end
+
+    if not isKeyValid() then
+        print("[Loader] Sua key expirou, contate o suporte.")
+        return
+    end
+
+    if detectAnticheat() then
+        ghostMode()
+        return
+    end
+
+    print("[Loader] Baixando ghosta.lua...")
+    local ghostaCode = downloadGhosta()
+    if not ghostaCode then
+        print("[Loader] Não foi possível baixar ghosta.lua, encerrando.")
+        return
+    end
+
+    print("[Loader] Executando ghosta.lua...")
+    local success = executeGhosta(ghostaCode)
+    if not success then
+        print("[Loader] Falha ao executar ghosta.lua.")
+        return
+    end
+
+    print("[Loader] ghosta.lua executado com sucesso.")
+end
+
+main()
